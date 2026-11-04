@@ -1149,7 +1149,7 @@
     const m = data.meta; if (!m) return;
     $("#run-line").textContent = `${location.origin}/v1/systemone`;
     $("#about-facts").replaceChildren(h("span", {}, "Each call is saved whole, what was asked and what Jev answered, in a database ", h("span", { class: "hint", "data-tip": m.database }, "on this computer"), "."));
-    $("#nokey").hidden = !!m.keyed;
+    $("#nokey").hidden = !!m.keyed || data.mapMode !== "decisions";
     $("#empty").hidden = data.records.length > 0 || data.mapMode !== "decisions";
   }
   // one popover at a time: how to use, the Jev key, or the layout menu
