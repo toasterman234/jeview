@@ -103,9 +103,15 @@ try {
   console.log("Browser smoke passed: default live decisions, sample context/harness rendering, click inspector, and return to decisions.");
 } finally {
   ws?.close();
-  chrome?.kill();
+  if (chrome) {
+    chrome.kill();
+    // A Chrome helper may still be writing into the temporary profile after SIGTERM.
+    if (chrome.exitCode === null && chrome.signalCode === null) {
+      await Promise.race([new Promise((resolve) => chrome.once("exit", resolve)), sleep(2000)]);
+    }
+  }
   await new Promise((resolve) => server.close(resolve));
   store.close();
-  rmSync(profile, { recursive: true, force: true });
-  rmSync(dir, { recursive: true, force: true });
+  rmSync(profile, { recursive: true, force: true, maxRetries: 12, retryDelay: 120 });
+  rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
