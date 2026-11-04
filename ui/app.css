@@ -177,6 +177,21 @@ code { font-family: var(--mono); font-size: .86em; background: var(--wash); bord
 .d-head .ghost { flex: none; margin-top: 1px; }
 .state { margin: -4px 0 18px; padding: 12px 14px; background: var(--wash); border-radius: 10px; }
 .drawer .eyebrow { text-transform: none; letter-spacing: 0; font-size: 12.5px; color: var(--muted); } /* plain labels in the drawer: easier to read */
+.chat-panel { position: fixed; top: 0; left: 0; bottom: 0; width: min(380px, 100vw); display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--hairline); box-shadow: var(--shadow); transform: translateX(-104%); transition: transform .38s cubic-bezier(.2, .8, .2, 1); z-index: 5; }
+.chat-panel.open { transform: none; }
+.chat-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 24px 16px; border-bottom: 1px solid var(--hairline); }
+.chat-head h2 { margin: 4px 0 0; font: 500 22px var(--display); }
+.chat-head .close { margin: -4px -8px 0 0; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 20px 20px 12px; }
+.chat-empty { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0; }
+.chat-message { max-width: 88%; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-message.user { margin-left: auto; background: var(--ink); color: var(--paper); }
+.chat-message.jev { background: var(--wash); }
+.chat-message.error { color: var(--red); background: var(--red-wash); }
+.chat-form { display: flex; gap: 8px; align-items: flex-end; padding: 14px 16px 18px; border-top: 1px solid var(--hairline); }
+.chat-form textarea { flex: 1; min-width: 0; resize: none; border: 1px solid var(--hairline-strong); border-radius: 10px; background: var(--paper); color: var(--ink); padding: 10px 11px; font: 13.5px/1.4 var(--body); outline: none; }
+.chat-form textarea:focus { border-color: var(--ink); }
+.chat-form .primary { flex: none; }
 .notice { background: var(--red-wash); color: var(--red); border-radius: 10px; padding: 10px 12px; margin: 0 0 22px; font-size: 13px; overflow-wrap: anywhere; }
 
 .chain { margin: 0 0 22px; padding: 14px 0 2px; border-top: 1px solid var(--hairline); }
@@ -247,5 +262,5 @@ pre.raw { font: 11.5px/1.5 var(--mono); background: var(--wash); border-radius: 
 }
 @media (prefers-reduced-motion: reduce) {
   .pulse.on, .recent li { animation: none; }
-  .drawer { transition: none; }
+  .drawer, .chat-panel { transition: none; }
 }

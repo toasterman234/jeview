@@ -1149,6 +1149,29 @@
     if (!response.ok) { error.textContent = value.error ?? "The key could not be saved."; error.hidden = false; return; }
     $("#key-input").value = ""; showSettings(value);
   }
+  // ---------- direct chat ----------
+  const chat = $("#chat-panel"), chatMessages = $("#chat-messages"), chatInput = $("#chat-input");
+  function chatLine(text, kind) {
+    const line = document.createElement("p"); line.className = `chat-message ${kind}`; line.textContent = text; chatMessages.append(line); chatMessages.scrollTop = chatMessages.scrollHeight; return line;
+  }
+  function setChat(open) {
+    chat.classList.toggle("open", open); chat.setAttribute("aria-hidden", String(!open)); chat.toggleAttribute("inert", !open); $("#chat-toggle").setAttribute("aria-expanded", String(open));
+    if (open) chatInput.focus();
+  }
+  $("#chat-toggle").addEventListener("click", () => setChat(!chat.classList.contains("open")));
+  $("#chat-close").addEventListener("click", () => setChat(false));
+  $("#chat-form").addEventListener("submit", async (event) => {
+    event.preventDefault(); const question = chatInput.value.trim(); if (!question) return;
+    chatInput.value = ""; chatLine(question, "user"); const pending = chatLine("Thinking…", "jev");
+    try {
+      const response = await fetch("/v1/systemone", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "jev-latest", state: { question }, questions: { answer: { type: "text", instructions: "Answer the user's question directly and concisely.", context: question } } }) });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw Error(value.error || `Request failed (${response.status})`);
+      const answer = value.answers?.answer?.text ?? value.answers?.answer?.value ?? value.answers?.answer?.choice;
+      if (answer === undefined) throw Error("Jev returned no text answer");
+      pending.remove(); chatLine(String(answer), "jev");
+    } catch (error) { pending.remove(); chatLine(error.message || "The request failed.", "error"); }
+  });
   $("#key-form").addEventListener("submit", (event) => { event.preventDefault(); const key = $("#key-input").value.trim(); if (key) saveSettings(key); });
   document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-copy]");
