@@ -1164,12 +1164,12 @@
     event.preventDefault(); const question = chatInput.value.trim(); if (!question) return;
     chatInput.value = ""; chatLine(question, "user"); const pending = chatLine("Thinking…", "jev");
     try {
-      const response = await fetch("/v1/systemone", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "jev-latest", state: { question }, questions: { answer: { type: "text", instructions: "Answer the user's question directly and concisely.", context: question } } }) });
+      const response = await fetch("/v1/systemone", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "jev-latest", state: question, questions: { answer: { type: "noul", instructions: question } } }) });
       const value = await response.json().catch(() => ({}));
-      if (!response.ok) throw Error(value.error || `Request failed (${response.status})`);
-      const answer = value.answers?.answer?.text ?? value.answers?.answer?.value ?? value.answers?.answer?.choice;
-      if (answer === undefined) throw Error("Jev returned no text answer");
-      pending.remove(); chatLine(String(answer), "jev");
+      if (!response.ok) throw Error(value.detail?.message || value.error || `Request failed (${response.status})`);
+      const answer = value.answers?.answer?.noul;
+      if (answer === undefined) throw Error("Jev returned no yes/no answer");
+      pending.remove(); chatLine(answer ? "Yes" : "No", "jev");
     } catch (error) { pending.remove(); chatLine(error.message || "The request failed.", "error"); }
   });
   $("#key-form").addEventListener("submit", (event) => { event.preventDefault(); const key = $("#key-input").value.trim(); if (key) saveSettings(key); });
