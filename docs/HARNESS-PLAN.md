@@ -20,13 +20,13 @@ Every observed edge must refer to a source event/call, revision and identity; fi
 
 ## Delivery sequence and acceptance gates
 
-### Phase A — fixture-based canvas slices (IN PROGRESS; exploration)
+### Phase A — fixture-based canvas slices (PROTOTYPE IMPLEMENTED; exploration, not promoted)
 - Add minimal, explicitly **sample** Context and Harness layers, with toggle control in the existing Jeview page.
 - Draw nodes and edges through Jeview's **existing CanvasRenderingContext2D**, not a replacement library.
 - Start from a typed *static fixture* with repository, document, agent, skill, policy, capability and links. No scan, network API or automatic dispatch.
 - Click a sample node to open the **existing drawer** with provenance, type, relations, and an explanation that it is sample data.
 - Default remains the current decision trace; no changes to Jev request/response or server security.
-- Verify `npm run typecheck`, `npm run check:pages`, `npm test`, and a real browser interaction test before promoting from exploration. Existing UI tests are not present, so browser validation is an **explicit open gate**.
+- Verified `npm run typecheck`, `npm run check:pages`, `npm test`, and a headless Chrome smoke covering the original canvas, both fixture modes, sample-node click inspection, and return to Decisions. This confirms the fixture UI interaction only, not real connectors or agent actions.
 
 ### Phase B — read-only observed resource model (NOT STARTED)
 - Decide resource ownership and incoming format; model stable identities and change history.
@@ -58,4 +58,5 @@ Every observed edge must refer to a source event/call, revision and identity; fi
 ## Evidence log
 - 2026-11-04: inspected `main` head `52d7abf`, `AGENTS.md`, test workflow, server path and renderer. `main` unprotected (not permission to bypass review). Issue #1 remains open.
 - 2026-11-04: created `explore/composable-harness-view` from that commit. Slice A is a separate branch, not a deployment.
-- Pending: source read-back of each prototype change; unit/type syntax CI; interactive browser proof; maintainer promotion decision.
+- Verified: source read-back for plan, fixture, canvas hooks, view controls, test and parse checks. GitHub Actions [push run 41937585687](https://github.com/toasterman234/jeview/actions/runs/41937585687) completed successfully at `10dcb3d`; job log states: `Browser smoke passed: default live decisions, sample context/harness rendering, click inspector, and return to decisions.` Typecheck, JS parse and unit tests also passed.
+- Still open: maintainer review/promotion; actual context adapters, capability registry, real decisions using those options, simulation, and real gated agent triggering. Synthetic fixtures are not runtime evidence.
