@@ -2,3 +2,7 @@ node_modules/
 *.sqlite
 *.sqlite-*
 .DS_Store
+
+# Private Things Loop exports are local only. Never commit them to public Jeview.
+*things-loop*snapshot*.json
+.private/

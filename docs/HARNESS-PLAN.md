@@ -28,27 +28,35 @@ Every observed edge must refer to a source event/call, revision and identity; fi
 - Default remains the current decision trace; no changes to Jev request/response or server security.
 - Verified `npm run typecheck`, `npm run check:pages`, `npm test`, and a headless Chrome smoke covering the original canvas, both fixture modes, sample-node click inspection, and return to Decisions. This confirms the fixture UI interaction only, not real connectors or agent actions.
 
-### Phase B — read-only observed resource model (NOT STARTED)
-- Decide resource ownership and incoming format; model stable identities and change history.
-- Attach bounded context snapshots/repository/doc source references to Jev call IDs; preserve exact byte stream sent to TypeSafe. No automatic upload of complete files or session logs.
-- Add stale/unavailable/unknown styling and a source/permission drawer.
-- Verify a known fixture, the exact input context sent to Jev, and replay fidelity.
+### Phase B — read-only observed resource model (PARTIAL IMPLEMENTATION; work #3; not promoted)
+- **Implemented on separate branch:** an opt-in, offline exporter for a private, source-hashed local Things Loop snapshot; an explicit bounded read-only API; and a native Jeview Things Loop graph view centered on Case/Note, recorded Phases and typed NoteLinks.
+- The export is metadata-only and is never checked into this public repository. Exporter is separate from Jeview's Node 24 runtime; code and contract in [THINGS-LOOP-BRIDGE.md](THINGS-LOOP-BRIDGE.md).
+- Disconnected/malformed/aged snapshots are labeled honestly; case details, source UUIDs, exact source files, edge direction and rationales are inspectable in the existing drawer.
+- **Still to implement:** verified current Mac export, export freshness/refresh integration, source-to-Jev-call context linkage, bounded context injection, decision candidate construction, full change-history mapping and replay of actual Jev decisions with source lineage.
+- **Gates:** synthetic tests + browser proof for UI/code; **Mac record read-back and source provenance remain unverified** and cannot be inferred from GitHub mirror or test fixture. No automatic context sent to TypeSafe. No dispatch.
 
 ### Phase C — decision candidates and harness graph (NOT STARTED)
 - Define versioned capability manifests (agent / behavior / skill / tool / workflow) and deterministic eligibility/policy filtering.
 - Present eligible, excluded, selected and uncertain Jev choices separately; support independent multi-label decisions.
 - Show relevant context and agent capabilities adjacent to Jev's actual choice on the same canvas, with explicit lineage.
 
-### Phase D — non-executing simulation and outcome journal (NOT STARTED)
-- Trace Event → Context → Decision → Gate → Proposed Action → Simulated Run → Outcome → Feedback.
-- Simulate only in isolated browser/session state; never call a real tool or mutate the runtime.
-- Prove replay, denial paths, and the distinction between asserted/observed/simulated states.
+### Phase D — non-executing simulation and outcome journal (PARTIAL SANDBOX PROTOTYPE, NOT PROMOTED)
+- Work #5 adds the first **isolated event → guard → effect → simulated outcome** editor to the native canvas. Drafts can contain 1–8 typed steps, be saved browser-locally, stepped, played, reset and replayed. Source objects remain unchanged, and the event trace labels every change simulated.
+- The Object Map renders all typed local-export Note, Case, Phase and historical system components with type clusters/labels and graph focus; Processes shows historical descriptive processes, not executable code; Observe lists old reported evidence and explicitly disclaims a live event feed.
+- Guards for a hypothetical Case stage must follow the declared transition adjacency. This is simulation gating, **not verified real enforcement**. No agents/tools, actual workflow dispatch, source writes, runtime authorization, or live telemetry is added.
+- **Still to implement:** actual Jev decision/candidate junction, real context/decision links, versioned authoritative process/effect definitions, loop observability, replay against real event history, and policy/admission evaluation. Those are independent gates and cannot be inferred from a sandbox effect. See [OBJECT-MAP-SIMULATION.md](OBJECT-MAP-SIMULATION.md).
 
 ### Phase E — real agent dispatch (BLOCKED ON SEPARATE PROMOTION)
 - Choose an adapter and authority owner; do not infer agent availability from a registry record.
 - Approval-gated, authenticated action dispatch outside Jeview's transparent proxy, with allowlisted actions, scope checks, idempotency and audit.
 - Verify request acceptance, observed run state, actual result evidence, and dependent state updates before marking completed.
 - Explicit promotion review required after Phase D; this plan does not approve Phase E.
+
+### Object Map work slice (Work #5; stacked draft, not an adoption)
+- User clarified that the actual target is a **typed object graph plus process/effect simulation**, not a fixed SI1 decision diagram. Work #5 stacks on Phase B without replacing the Mac-local React `things-workflow-canvas` project or modifying private source files.
+- Its optional local exporter reads the historical system topology as an additional, explicitly historical component layer with evidence preserved, while the original Note/Case/Phase/Link schema remains intact. Current Mac record freshness is still unverified.
+- The core source-backed object map and sandbox runner have synthetic tests and browser gates; exact-head CI run IDs and blockers are recorded in issue #5 / the stacked draft PR.
+- Do not promote the visual preview to a live agent/process executor; no real source adaptation, runtime authorization, or current Mac browser deployment has been verified.
 
 ## Out-of-scope / hard safeguards
 - No AntV, graph-framework rewrite, third-party runtime dependency, remote/public binding, repo crawling, auto agent invocation, auto-changing policies, or automatic model evolution.
@@ -60,3 +68,4 @@ Every observed edge must refer to a source event/call, revision and identity; fi
 - 2026-11-04: created `explore/composable-harness-view` from that commit. Slice A is a separate branch, not a deployment.
 - Verified: source read-back for plan, fixture, canvas hooks, view controls, test and parse checks. GitHub Actions [push run 41937585687](https://github.com/toasterman234/jeview/actions/runs/41937585687) completed successfully at `10dcb3d`; job log states: `Browser smoke passed: default live decisions, sample context/harness rendering, click inspector, and return to decisions.` Typecheck, JS parse and unit tests also passed.
 - Still open: maintainer review/promotion; actual context adapters, capability registry, real decisions using those options, simulation, and real gated agent triggering. Synthetic fixtures are not runtime evidence.
+- 2026-11-04: Work #3 authorized for a bounded, **read-only** Things Loop source-bridge implementation, stacked on draft Phase A without merge. Code is implemented and synthetic end-to-end tests pass on the isolated branch; no private records have been copied into public Jeview. The current governed Mac runner's latest push-lane job was queued and the control-plane runner issue #182 remains open, so a live Mac source read-back is not established.
