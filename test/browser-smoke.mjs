@@ -60,7 +60,7 @@ try {
   ], { stdio: "ignore" });
   chrome.on("error", () => {}); // The timed readiness check below reports startup failure.
   const debugPort = await retry(() => existsSync(join(profile, "DevToolsActivePort")) &&
-    Number(readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]), "Chrome DevTools port");
+    Number(readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]), "Chrome DevTools port", 30000); // Parallel CI Chrome startup can be slow.
   const endpoint = await retry(async () => {
     const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
     return pages.find((page) => page.type === "page" && page.url.includes(`127.0.0.1:${port}`))?.webSocketDebuggerUrl;
