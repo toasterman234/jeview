@@ -108,11 +108,11 @@ export function parseThingsLoopSnapshot(value: unknown): ThingsLoopGraph {
          "labels", "kind", "perspective", "detail",
          "phase_order", "intent", "intent_labels", "inferred_intent_labels", "topic_labels",
          "state_labels", "kind_labels", "stance_labels"].includes(k))),
-      source: { path: n.source.path, id: n.source.id }, evidence: "record", status: "snapshot",
+      source: { path: n.source.path, id: n.source.id }, evidence: n.evidence, status: n.status,
     })),
     edges: value.edges.map((e: ThingsLoopEdge) => ({
       from: e.from, to: e.to, type: e.type, rationale: e.rationale,
-      source: { path: e.source.path, index: e.source.index }, evidence: "record",
+      source: { path: e.source.path, index: e.source.index }, evidence: e.evidence,
     })),
     counts: expected,
     warnings: { unresolved_links: value.warnings.unresolved_links as number },
