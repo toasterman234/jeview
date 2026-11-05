@@ -74,7 +74,7 @@ export function parseThingsLoopSnapshot(value: unknown): ThingsLoopGraph {
     phases: value.nodes.filter((n: ThingsLoopNode) => n.type === "phase").length,
     links: value.edges.filter((e: ThingsLoopEdge) => !["based_on", "has_phase"].includes(e.type)).length,
   };
-  if (!Object.entries(expected).every(([key, count]) => value.counts[key] === count)) {
+  if (!Object.entries(expected).every(([key, count]) => (value.counts as Record<string, unknown>)[key] === count)) {
     throw Error("Things Loop snapshot counts do not match nodes/edges");
   }
   // No additional secret/body fields are passed through from an untrusted snapshot.
