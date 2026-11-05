@@ -127,6 +127,9 @@ try {
   // Switch to the real-source *format*, using only an innocuous synthetic local snapshot.
   await evaluate('window.__canvasWords = []; document.querySelector("#view-loop").click()');
   await retry(() => evaluate('window.JeviewLoopGraph.sourceInfo().connected === true'), "Things Loop local read API");
+  await retry(() => evaluate('document.querySelector("#corner").textContent.includes("Things Loop") && document.querySelector("#corner .qlist button")'), "Cases appear in Jeview sidebar");
+  await evaluate('document.querySelector("#corner .qlist button").click()');
+  assert.equal(await evaluate('window.JeviewLoopGraph.center().type'), "case");
   await retry(() => evaluate('window.__canvasWords.some(text => text.includes("THINGS LOOP"))'), "Things Loop native-canvas draw");
   const point = await evaluate('(() => { const t = window.__moves.slice(-2), k = window.__zoom; return [t[0][0] + t[1][0] * k, t[0][1] + t[1][1] * k]; })()');
   await evaluate('document.querySelector("#map").dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: ' + point[0] + ', clientY: ' + point[1] + ' }))');
