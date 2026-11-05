@@ -1033,25 +1033,15 @@
   let cornerKey = "";
   function renderCorner(force = false) {
     if (isLoopMode()) {
-      const source = loopGraph.sourceInfo(), cases = loopGraph.cases();
-      const chosen = loopGraph.center()?.id, key = "loop|" + (source.revision || source.status) + "|" + chosen;
+      const source = loopGraph.sourceInfo();
+      const key = data.mapMode + "|" + (source.revision || source.status) + "|" +
+        loopGraph.mode() + "|" + (loopGraph.center()?.id || "") + "|" + loopGraph.search();
       if (!force && cornerKey === key) return;
       cornerKey = key;
-      const stages = { working: 0, scoped: 1, held: 2, blocked: 3, done: 4 };
-      const ordered = [...cases].sort((a, b) => (stages[a.properties.stage] ?? 5) - (stages[b.properties.stage] ?? 5) || a.label.localeCompare(b.label));
-      const entry = (item) => h("li", { class: item.id === chosen ? "here" : "" },
-        h("button", { onclick: () => { loopGraph.focus(item.id); closeDrawer(); view.user = false; showToggles(); renderCorner(true); } },
-          h("span", { class: "qtext" }, item.label),
-          h("span", { class: "qmeta" }, (item.properties.stage || "unknown stage") + " · " + (item.properties.destination || "unknown destination"))));
-      corner.replaceChildren(h("div", { class: "corner-inner" },
-        h("div", { class: "tabs" }, h("span", { class: "tab", "aria-pressed": "true" }, "Things Loop · Cases",
-          h("span", { class: "count" }, cases.length))),
-        h("p", { class: "stats-meta" }, source.connected
-          ? "Private local export · " + (source.exportedAt || "unknown time") + " · not live"
-          : (source.message || "Not connected")),
-        h("div", { class: "corner-body" }, ordered.length ?
-          h("ol", { class: "qlist" }, ordered.slice(0, 150).map(entry)) :
-          h("p", { class: "quiet" }, "No source-backed Cases to show."))));
+      loopWorkspace.render(corner, h, {
+        changed: () => { view.user = false; showToggles(); renderCorner(true); },
+        switchTo: (mode) => switchGraph(mode),
+      });
       return;
     }
     const shown = data.records.filter(visible), labels = [...new Set(data.records.map((r) => r.label))];
@@ -1335,7 +1325,13 @@
         data.meta = next; data.cursor = next.cursor;
         for (const record of next.records) { data.records.push(record); data.byId.set(record.id, record); fresh.push(record); }
       } while (data.meta.more);
-      if (first) { await document.fonts?.ready; readColors(); rebuild(); renderCorner(true); canvas.classList.add("ready"); drawn = true; const wanted = Number(location.hash.slice(1)); if (wanted) { await known([wanted]); if (data.byId.has(wanted)) openCall(wanted); } }
+      if (first) { await document.fonts?.ready; readColors(); rebuild(); renderCorner(true); canvas.classList.add("ready"); drawn = true; const wanted = Number(location.hash.slice(1)); if (wanted) { await known([wanted]); if (data.byId.has(wanted)) openCall(wanted); }
+        // The object map is primary when a real local snapshot is configured.
+        // Without a snapshot, retain the original Decisions default and say not connected.
+        if (!wanted && !loopLoaded) void loadLoopSnapshot().then((connected) => {
+          if (connected && data.mapMode === "decisions") switchGraph("loop");
+        });
+      }
       else if (fresh.length) { arrive(fresh); pileUp(fresh); renderCorner(); }
       fresh = [];
       about();
