@@ -834,6 +834,7 @@
     } catch {
       loopGraph.setResult({ status: "unavailable", connected: false, message: "The local source could not be read." });
     }
+    if (data.mapMode === "loop") renderCorner(true);
   }
   function switchGraph(mode) {
     data.mapMode = mode;
@@ -844,7 +845,7 @@
       const button = $(`#view-${name}`);
       button.setAttribute("aria-pressed", String(mode === name));
     }
-    closeDrawer(); about();
+    closeDrawer(); about(); renderCorner(true);
   }
   for (const name of ["decisions", "context", "harness", "loop"]) {
     $(`#view-${name}`).addEventListener("click", () => switchGraph(name));
@@ -1012,6 +1013,28 @@
   const totals = (shown) => `${plural(shown.length, "call")} · median ${seconds(median(shown.map((r) => r.elapsedMs)))} · ${money(shown.reduce((sum, r) => sum + (r.cost || 0), 0))}`;
   let cornerKey = "";
   function renderCorner(force = false) {
+    if (data.mapMode === "loop") {
+      const source = loopGraph.sourceInfo(), cases = loopGraph.cases();
+      const chosen = loopGraph.center()?.id, key = "loop|" + (source.revision || source.status) + "|" + chosen;
+      if (!force && cornerKey === key) return;
+      cornerKey = key;
+      const stages = { working: 0, scoped: 1, held: 2, blocked: 3, done: 4 };
+      const ordered = [...cases].sort((a, b) => (stages[a.properties.stage] ?? 5) - (stages[b.properties.stage] ?? 5) || a.label.localeCompare(b.label));
+      const entry = (item) => h("li", { class: item.id === chosen ? "here" : "" },
+        h("button", { onclick: () => { loopGraph.focus(item.id); closeDrawer(); view.user = false; showToggles(); renderCorner(true); } },
+          h("span", { class: "qtext" }, item.label),
+          h("span", { class: "qmeta" }, (item.properties.stage || "unknown stage") + " · " + (item.properties.destination || "unknown destination"))));
+      corner.replaceChildren(h("div", { class: "corner-inner" },
+        h("div", { class: "tabs" }, h("span", { class: "tab", "aria-pressed": "true" }, "Things Loop · Cases",
+          h("span", { class: "count" }, cases.length))),
+        h("p", { class: "stats-meta" }, source.connected
+          ? "Private local export · " + (source.exportedAt || "unknown time") + " · not live"
+          : (source.message || "Not connected")),
+        h("div", { class: "corner-body" }, ordered.length ?
+          h("ol", { class: "qlist" }, ordered.slice(0, 150).map(entry)) :
+          h("p", { class: "quiet" }, "No source-backed Cases to show."))));
+      return;
+    }
     const shown = data.records.filter(visible), labels = [...new Set(data.records.map((r) => r.label))];
     const key = `${data.tab}|${data.focus}|${data.run}|${shown.length}|${[...world.kinds.values()].reduce((n, k) => n + k.count, 0)}|${world.shown}`;
     if (!force && key === cornerKey) return;
