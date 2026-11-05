@@ -207,7 +207,7 @@ def export(root):
             if src not in system_ids or dst not in system_ids:
                 raise ValueError("System graph references nonexistent node")
             relation = string(source.get("type"), 80)
-            if not relation or not re.fullmatch(r"[A-Za-z0-9 _./-]{1,80}", relation):
+            if not relation or not re.fullmatch(r"[^\x00-\x1f<>]{1,80}", relation):
                 raise ValueError("Invalid system graph relation type")
             edge(src, dst, relation, TOPOLOGY, index, source.get("detail"), source["evidence"])
 
