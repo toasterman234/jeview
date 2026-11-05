@@ -27,8 +27,11 @@ SOURCES = [
     ("data/dogfood-links.yaml", "links", "link"),
 ]
 OVERLAY = ("data/highlight-comments.yaml", None, "overlay")
-AXES = ("intent_labels", "inferred_intent_labels", "topic_labels", "state_labels",
+AXES = ("labels", "intent_labels", "inferred_intent_labels", "topic_labels", "state_labels",
         "kind_labels", "stance_labels")
+TOPOLOGY = "system-graph/graph.json"
+COMPONENT_KINDS = {"actor", "system", "store", "model", "check", "code", "process", "output", "gap"}
+EVIDENCE = {"observed", "declared", "inferred", "missing", "conflicting"}
 
 
 def identifier(value):
@@ -80,22 +83,22 @@ def export(root):
     seen = set()
     missing_links = 0
 
-    def node(node_id, kind, label, props, rel, source_id):
+    def node(node_id, kind, label, props, rel, source_id, evidence="record", status="snapshot"):
         if node_id in seen:
             raise ValueError("Duplicate Things Loop node id")
         seen.add(node_id)
         nodes.append({
             "id": node_id, "type": kind, "label": string(label, 160),
             "properties": props, "source": {"path": rel, "id": source_id},
-            "evidence": "record", "status": "snapshot",
+            "evidence": evidence, "status": status,
         })
 
-    def edge(src, dst, kind, rel, index, rationale=""):
+    def edge(src, dst, kind, rel, index, rationale="", evidence="record"):
         edges.append({
             "from": src, "to": dst, "type": kind,
             "rationale": string(rationale, 350),
             "source": {"path": rel, "index": index},
-            "evidence": "record",
+            "evidence": evidence,
         })
 
     for parsed, info, key, kind in loaded:
@@ -171,6 +174,43 @@ def export(root):
                 continue  # Never fabricate orphan target/source nodes.
             edge(src, dst, predicate, info["path"], index, link.get("rationale"))
 
+    # This is a separate HISTORICAL system-topology projection, not proof of
+    # current runtime state. Source records remain the authority for Notes/Cases.
+    topology_file = root / TOPOLOGY
+    if topology_file.exists():
+        payload = topology_file.read_bytes()
+        if len(payload) > 2 * 1024 * 1024:
+            raise ValueError("System graph exceeds the 2 MiB bound")
+        topology = json.loads(payload)
+        if not isinstance(topology, dict) or not isinstance(topology.get("nodes"), list) or not isinstance(topology.get("edges"), list) or len(topology["nodes"]) > 500 or len(topology["edges"]) > 2000:
+            raise ValueError("Invalid system graph collections")
+        files[TOPOLOGY] = {"path": TOPOLOGY, "sha256": hashlib.sha256(payload).hexdigest()}
+        system_ids = set()
+        for source in topology["nodes"]:
+            if not isinstance(source, dict) or not isinstance(source.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,90}", source["id"]):
+                raise ValueError("Invalid system graph node id")
+            kind = source.get("kind")
+            if kind not in COMPONENT_KINDS or source.get("evidence") not in EVIDENCE:
+                raise ValueError("Invalid system graph node kind/evidence")
+            node_id = "sys:" + source["id"]
+            node(node_id, kind, string(source.get("label"), 160), {
+                "perspective": string(source.get("perspective"), 80),
+                "detail": string(source.get("detail"), 350),
+                "kind": kind,
+            }, TOPOLOGY, source["id"], source["evidence"], "historical")
+            system_ids.add(node_id)
+        for index, source in enumerate(topology["edges"]):
+            if not isinstance(source, dict) or source.get("evidence") not in EVIDENCE:
+                raise ValueError("Invalid system graph edge evidence")
+            src = "sys:" + string(source.get("from"), 90)
+            dst = "sys:" + string(source.get("to"), 90)
+            if src not in system_ids or dst not in system_ids:
+                raise ValueError("System graph references nonexistent node")
+            relation = string(source.get("type"), 80)
+            if not relation or not re.fullmatch(r"[A-Za-z0-9 _./-]{1,80}", relation):
+                raise ValueError("Invalid system graph relation type")
+            edge(src, dst, relation, TOPOLOGY, index, source.get("detail"), source["evidence"])
+
     signature = hashlib.sha256()
     for file in sorted(files.values(), key=lambda f: f["path"]):
         signature.update(file["path"].encode("utf8") + b"\0" + file["sha256"].encode("ascii") + b"\n")
@@ -183,7 +223,9 @@ def export(root):
         "counts": {"notes": sum(n["type"] == "note" for n in nodes),
                    "cases": sum(n["type"] == "case" for n in nodes),
                    "phases": sum(n["type"] == "phase" for n in nodes),
-                   "links": sum(e["type"] in PREDICATES for e in edges)},
+                   "links": sum(e["type"] in PREDICATES and e["from"].startswith("note:") for e in edges),
+                   "components": sum(n["id"].startswith("sys:") for n in nodes),
+                   "system_links": sum(e["from"].startswith("sys:") for e in edges)},
     }
 
 
