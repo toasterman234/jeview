@@ -40,16 +40,23 @@ Every observed edge must refer to a source event/call, revision and identity; fi
 - Present eligible, excluded, selected and uncertain Jev choices separately; support independent multi-label decisions.
 - Show relevant context and agent capabilities adjacent to Jev's actual choice on the same canvas, with explicit lineage.
 
-### Phase D — non-executing simulation and outcome journal (NOT STARTED)
-- Trace Event → Context → Decision → Gate → Proposed Action → Simulated Run → Outcome → Feedback.
-- Simulate only in isolated browser/session state; never call a real tool or mutate the runtime.
-- Prove replay, denial paths, and the distinction between asserted/observed/simulated states.
+### Phase D — non-executing simulation and outcome journal (PARTIAL SANDBOX PROTOTYPE, NOT PROMOTED)
+- Work #5 adds the first **isolated event → guard → effect → simulated outcome** editor to the native canvas. Drafts can contain 1–8 typed steps, be saved browser-locally, stepped, played, reset and replayed. Source objects remain unchanged, and the event trace labels every change simulated.
+- The Object Map renders all typed local-export Note, Case, Phase and historical system components with type clusters/labels and graph focus; Processes shows historical descriptive processes, not executable code; Observe lists old reported evidence and explicitly disclaims a live event feed.
+- Guards for a hypothetical Case stage must follow the declared transition adjacency. This is simulation gating, **not verified real enforcement**. No agents/tools, actual workflow dispatch, source writes, runtime authorization, or live telemetry is added.
+- **Still to implement:** actual Jev decision/candidate junction, real context/decision links, versioned authoritative process/effect definitions, loop observability, replay against real event history, and policy/admission evaluation. Those are independent gates and cannot be inferred from a sandbox effect. See [OBJECT-MAP-SIMULATION.md](OBJECT-MAP-SIMULATION.md).
 
 ### Phase E — real agent dispatch (BLOCKED ON SEPARATE PROMOTION)
 - Choose an adapter and authority owner; do not infer agent availability from a registry record.
 - Approval-gated, authenticated action dispatch outside Jeview's transparent proxy, with allowlisted actions, scope checks, idempotency and audit.
 - Verify request acceptance, observed run state, actual result evidence, and dependent state updates before marking completed.
 - Explicit promotion review required after Phase D; this plan does not approve Phase E.
+
+### Object Map work slice (Work #5; stacked draft, not an adoption)
+- User clarified that the actual target is a **typed object graph plus process/effect simulation**, not a fixed SI1 decision diagram. Work #5 stacks on Phase B without replacing the Mac-local React `things-workflow-canvas` project or modifying private source files.
+- Its optional local exporter reads the historical system topology as an additional, explicitly historical component layer with evidence preserved, while the original Note/Case/Phase/Link schema remains intact. Current Mac record freshness is still unverified.
+- The core source-backed object map and sandbox runner have synthetic tests and browser gates; exact-head CI run IDs and blockers are recorded in issue #5 / the stacked draft PR.
+- Do not promote the visual preview to a live agent/process executor; no real source adaptation, runtime authorization, or current Mac browser deployment has been verified.
 
 ## Out-of-scope / hard safeguards
 - No AntV, graph-framework rewrite, third-party runtime dependency, remote/public binding, repo crawling, auto agent invocation, auto-changing policies, or automatic model evolution.
