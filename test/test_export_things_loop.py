@@ -73,7 +73,8 @@ class ExportTests(unittest.TestCase):
 
     def test_metadata_only_lineage_phase_and_hashes(self):
         graph = module.export(self.root)
-        self.assertEqual(graph["counts"], {"notes": 2, "cases": 1, "phases": 2, "links": 1})
+        self.assertEqual(graph["counts"], {"notes": 2, "cases": 1, "phases": 2, "links": 1,
+                                            "components": 0, "system_links": 0})
         self.assertEqual(graph["warnings"], {"unresolved_links": 1})
         self.assertEqual(graph["source"]["authority"], "unverified")
         self.assertEqual(len(graph["source"]["revision"]), 64)
@@ -85,6 +86,34 @@ class ExportTests(unittest.TestCase):
         self.assertNotIn("private body", data)
         self.assertNotIn("Orphan should be counted", data)
         self.assertNotIn(str(self.root), data)
+
+    def test_optional_historical_system_graph_is_typed_and_evidence_marked(self):
+        target = self.root / "system-graph" / "graph.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({
+            "facts": {"receipt": "historical-only"},
+            "nodes": [
+                {"id": "process-route", "kind": "process", "label": "Route a Case",
+                 "perspective": "processes", "detail": "Declared path, not executing",
+                 "evidence": "declared"},
+                {"id": "system-runner", "kind": "system", "label": "Event runtime",
+                 "perspective": "implementation", "detail": "Not connected",
+                 "evidence": "missing"},
+            ],
+            "edges": [{"from": "process-route", "to": "system-runner", "type": "triggers",
+                       "detail": "Not yet observed", "evidence": "missing"}],
+        }), encoding="utf8")
+        graph = module.export(self.root)
+        self.assertEqual(graph["counts"]["components"], 2)
+        self.assertEqual(graph["counts"]["system_links"], 1)
+        self.assertEqual(graph["nodes"][-2]["type"], "process")
+        self.assertEqual(graph["nodes"][-2]["status"], "historical")
+        self.assertEqual(graph["edges"][-1]["evidence"], "missing")
+        self.assertIn("system-graph/graph.json", [x["path"] for x in graph["source"]["files"]])
+        self.assertNotIn("historical-only", json.dumps(graph))
+        # Existing Notes/Cases still refer to their own source paths/UUIDs.
+        self.assertEqual(graph["nodes"][0]["type"], "note")
+        self.assertEqual(graph["nodes"][0]["properties"]["intent_labels"], ["Scope"])
 
     def test_cli_writes_0600_snapshot_outside_source(self):
         output = Path(self.tmp.name) / "private" / "snapshot.json"
