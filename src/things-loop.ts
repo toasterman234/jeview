@@ -33,7 +33,7 @@ const digest = (value: unknown) => isString(value, 64) && /^[a-f0-9]{64}$/.test(
 const nodeId = (value: unknown) => isString(value, 140) && /^(note|case|phase|sys):[A-Za-z0-9:_-]+$/.test(value as string);
 const kinds = new Set(["actor", "system", "store", "model", "check", "code", "process", "output", "gap"]);
 const evidences = new Set(["record", "observed", "declared", "inferred", "missing", "conflicting"]);
-const sysRelation = (value: unknown) => isString(value, 80) && /^[A-Za-z0-9 _./-]{1,80}$/.test(value as string);
+const sysRelation = (value: unknown) => isString(value, 80) && /^[^\x00-\x1f<>]{1,80}$/.test(value as string);
 const allowedPredicates = new Set(["links_to", "branches_from", "prompted_by", "gates", "indicts", "derived_from", "based_on", "has_phase"]);
 const maxBytes = 8 * 1024 * 1024;
 
