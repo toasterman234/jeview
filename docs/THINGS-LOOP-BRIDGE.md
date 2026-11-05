@@ -1,5 +1,7 @@
 # Things Loop → Jeview: private, read-only projection
 
+> **Extension note (Work #5):** This document describes the original Phase B slice. The stacked Object Map prototype in [OBJECT-MAP-SIMULATION.md](OBJECT-MAP-SIMULATION.md) retains the same read-only private export boundary but adds the optional historical `system-graph/graph.json` component layer and a browser-only event/guard/effect simulator. The earlier "Case first" and limited-neighborhood UI description is superseded in that stacked prototype, **not** in unmerged parent PR #4. No authoritative Mac source, live event feed or agent dispatcher has been verified.
+
 **Status:** Scoped Phase B prototype in [Jeview Work #3](https://github.com/toasterman234/jeview/issues/3), stacked on [Phase A preview PR #2](https://github.com/toasterman234/jeview/pull/2). No merger, deployment, runtime execution, decision-context injection or Mac live-source verification.
 
 ## What is connected
