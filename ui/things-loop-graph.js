@@ -1,80 +1,143 @@
-// A local, source-backed Things Loop projection on Jeview's *existing* canvas.
-// No network calls here, no graph framework, and no actions. All content is read from the loopback API.
+// Things Loop object browser, drawn entirely on Jeview's original CanvasRenderingContext2D.
+// Nodes originate in an opt-in local source snapshot; simulation overlays are NEVER source facts.
 (() => {
-  const MAX_VISIBLE = 14;
-  const state = { graph: null, status: "not_configured", message: "No snapshot configured", focusId: null, visible: [], shownEdges: [], ageSeconds: null };
-  const words = (value) => String(value ?? "");
-  const short = (value, n = 27) => words(value).length > n ? words(value).slice(0, n - 1) + "…" : words(value);
-  const allNodes = () => state.graph?.nodes ?? [];
-  const allEdges = () => state.graph?.edges ?? [];
-  const byId = (id) => allNodes().find((n) => n.id === id);
-  const relation = (edge, id) => edge.from === id ? edge.to : edge.to === id ? edge.from : null;
-  const allowed = new Set(["based_on", "has_phase", "links_to", "branches_from", "prompted_by", "gates", "indicts", "derived_from"]);
-
+  "use strict";
+  const TYPES = ["case", "note", "phase", "process", "actor", "system", "store", "model", "check", "code", "output", "gap"];
+  const SYSTEM_KINDS = new Set(["actor", "system", "store", "model", "check", "code", "process", "output", "gap"]);
+  const AXES = ["intent_labels", "inferred_intent_labels", "topic_labels", "state_labels", "kind_labels", "stance_labels"];
+  const label = (value) => String(value ?? "");
+  const short = (s, max = 27) => label(s).length > max ? label(s).slice(0, max - 1) + "…" : label(s);
+  const state = { graph: null, status: "not_configured", message: "No snapshot configured",
+    ageSeconds: null, view: "objects", mode: "catalog", query: "", kinds: new Set(),
+    focusId: null, visible: [], shownEdges: [], groups: [], overlay: {}, flash: null };
+  const rawNodes = () => state.graph?.nodes ?? [];
+  const rawEdges = () => state.graph?.edges ?? [];
+  const byId = (id) => rawNodes().find((n) => n.id === id);
+  const kindOf = (node) => node.type;
+  const axesOf = (node) => AXES.flatMap((axis) =>
+    Array.isArray(node.properties?.[axis]) ? node.properties[axis].slice(0, 8).map((v) => ({ axis, value: v })) : []);
+  const labelsOf = (node) => {
+    const axes = axesOf(node);
+    const raw = Array.isArray(node.properties?.labels) ? node.properties.labels : [];
+    return [...axes.map((x) => x.value), ...raw].filter((v, i, a) => typeof v === "string" && a.indexOf(v) === i);
+  };
+  function nodesMatching() {
+    const q = state.query.toLowerCase().trim();
+    return rawNodes().filter((node) =>
+      (!state.kinds.size || state.kinds.has(node.type)) &&
+      (!q || [node.label, node.id, node.type, node.properties?.stage, node.properties?.detail,
+        ...labelsOf(node)].some((word) => label(word).toLowerCase().includes(q))) &&
+      (state.view !== "observe" || node.evidence === "observed"));
+  }
+  const palette = {
+    note: "#5092BB", case: "#9D77CA", phase: "#8B91A8", process: "#D38F57",
+    actor: "#58A68B", system: "#6D8CA8", store: "#6FAD91", model: "#758CCC",
+    check: "#D2A35B", code: "#90A3BD", output: "#A88C72", gap: "#D17B76",
+  };
+  const colorOf = (node, colors) => palette[node.type] ?? colors.accent;
+  function mapNodes(items) {
+    // Each typed cluster has its own radial constellation. All records are
+    // present (no silent "top N"); search / kind filter makes dense sets usable.
+    const groups = TYPES.map((type) => ({ type, nodes: items.filter((node) => kindOf(node) === type) }))
+      .filter((g) => g.nodes.length);
+    const ring = groups.length > 1 ? Math.max(780, groups.length * 235) : 0;
+    const placed = [], banners = [];
+    groups.forEach((group, index) => {
+      const angle = -Math.PI / 2 + 2 * Math.PI * index / groups.length;
+      const cx = ring * Math.cos(angle), cy = ring * Math.sin(angle);
+      banners.push({ type: group.type, count: group.nodes.length, x: cx, y: cy });
+      let cursor = 0, orbit = 135;
+      // Increasing rings maintain readable angular separation at 1:1 scale.
+      while (cursor < group.nodes.length) {
+        const capacity = Math.max(6, Math.floor((Math.PI * 2 * orbit) / 160));
+        const inRing = Math.min(capacity, group.nodes.length - cursor);
+        for (let j = 0; j < inRing; j++) {
+          const t = (j / inRing) * 2 * Math.PI - Math.PI / 2;
+          placed.push({ ...group.nodes[cursor + j], x: cx + Math.cos(t) * orbit,
+            y: cy + Math.sin(t) * orbit, w: 138, h: 52 });
+        }
+        cursor += inRing;
+        orbit += 67;
+      }
+    });
+    return { placed, banners };
+  }
+  function showAll() {
+    state.mode = "catalog"; state.focusId = null;
+    const items = nodesMatching(), built = mapNodes(items);
+    state.visible = built.placed; state.groups = built.banners;
+    const ids = new Set(state.visible.map((n) => n.id));
+    state.shownEdges = rawEdges().filter((edge) => ids.has(edge.from) && ids.has(edge.to));
+    return state.visible.length;
+  }
+  function linkOther(edge, id) {
+    return edge.from === id ? edge.to : edge.to === id ? edge.from : null;
+  }
   function focus(id) {
-    if (!byId(id)) return false;
-    state.focusId = id;
     const root = byId(id);
-    const connected = allEdges().filter((edge) => relation(edge, id) !== null && allowed.has(edge.type));
-    const direct = connected.map((edge) => ({ node: byId(relation(edge, id)), edge })).filter((x) => x.node);
-    // A case's original note has its own recorded links. Show those as a second, explicitly typed hop.
-    const note = direct.find((x) => x.edge.type === "based_on")?.node;
-    const fromNote = root.type === "case" && note ?
-      allEdges().filter((edge) => edge.from === note.id || edge.to === note.id)
-        .filter((edge) => !["based_on", "has_phase"].includes(edge.type))
-        .map((edge) => ({ node: byId(relation(edge, note.id)), edge })).filter((x) => x.node) : [];
-    const selected = [root], keys = new Set([root.id]);
-    const links = [];
-    for (const { node, edge } of [...direct, ...fromNote]) {
-      if (selected.length >= MAX_VISIBLE) break;
-      if (!keys.has(node.id)) { selected.push(node); keys.add(node.id); }
-      if (keys.has(edge.from) && keys.has(edge.to)) links.push(edge);
+    if (!root) return false;
+    state.mode = "focus"; state.focusId = root.id; state.groups = [];
+    const selected = [root], visited = new Set([root.id]), picked = [];
+    const neighbors = (fromId) => rawEdges()
+      .filter((edge) => linkOther(edge, fromId) !== null)
+      .map((edge) => ({ edge, node: byId(linkOther(edge, fromId)) }))
+      .filter((x) => x.node);
+    const first = neighbors(id), sourceNote = first.find((x) => x.edge.type === "based_on")?.node;
+    const list = [...first, ...(root.type === "case" && sourceNote ? neighbors(sourceNote.id) : [])];
+    for (const { edge, node } of list) {
+      if (selected.length >= 21) break;
+      if (!visited.has(node.id)) { visited.add(node.id); selected.push(node); }
+      if (visited.has(edge.from) && visited.has(edge.to)) picked.push(edge);
     }
-    state.visible = selected.map((n) => ({ ...n, w: 150, h: 54, x: 0, y: 0 }));
-    state.shownEdges = links;
-    const others = state.visible.slice(1), phases = others.filter((n) => n.type === "phase")
-      .sort((a, b) => Number(a.properties.phase_order) - Number(b.properties.phase_order));
-    const left = others.filter((n) => n.type !== "phase");
-    const lay = (list, x, centerY) => {
-      const step = 83, start = centerY - ((list.length - 1) * step) / 2;
-      list.forEach((n, i) => { n.x = x; n.y = start + step * i; });
-    };
-    lay(phases, 230, 0);
-    lay(left, -230, 0);
+    const ordered = selected.slice(1).sort((a, b) => a.type === "phase" && b.type === "phase"
+      ? Number(a.properties?.phase_order ?? 0) - Number(b.properties?.phase_order ?? 0)
+      : TYPES.indexOf(a.type) - TYPES.indexOf(b.type));
+    const split = Math.ceil(ordered.length / 2), left = ordered.slice(0, split), right = ordered.slice(split);
+    const pos = (arr, x) => arr.forEach((n, j) => { n.x = x; n.y = (j - (arr.length - 1) / 2) * 80; });
+    pos(left, -254); pos(right, 254);
+    root.x = 0; root.y = 0;
+    state.visible = selected.map((n) => ({ ...n, x: n.x, y: n.y, w: 164, h: 60 }));
+    state.shownEdges = picked.filter((edge) => visited.has(edge.from) && visited.has(edge.to));
     return true;
   }
-
+  function setView(view) {
+    if (!["objects", "processes", "simulate", "observe"].includes(view)) return false;
+    state.view = view;
+    state.kinds.clear();
+    if (view === "processes") {
+      const p = rawNodes().find((n) => n.type === "process");
+      return p ? focus(p.id) : showAll();
+    }
+    if (view === "simulate") {
+      const target = rawNodes().find((n) => n.type === "case") ?? rawNodes().find((n) => n.type === "note");
+      return target ? focus(target.id) : showAll();
+    }
+    showAll();
+    return true;
+  }
+  function setSearch(query) {
+    state.query = label(query).slice(0, 120);
+    if (state.mode === "catalog") showAll();
+  }
+  function toggleType(type) {
+    if (!TYPES.includes(type)) return;
+    if (state.kinds.size === 1 && state.kinds.has(type)) state.kinds.clear();
+    else state.kinds = new Set([type]);
+    showAll();
+  }
   function setResult(response) {
     state.status = response?.status ?? "unavailable";
     state.message = response?.message ?? "";
     state.graph = response?.connected && response?.graph?.format === "jeview.things-loop/v1" ? response.graph : null;
     state.ageSeconds = typeof response?.ageSeconds === "number" ? response.ageSeconds : null;
-    state.focusId = null; state.visible = []; state.shownEdges = [];
-    if (state.graph) {
-      const candidates = allNodes().filter((n) => n.type === "case");
-      const first = candidates.find((n) => n.properties.stage === "working") ??
-        candidates.find((n) => n.properties.stage === "scoped") ?? candidates[0] ?? allNodes()[0];
-      if (first) focus(first.id);
-    }
+    state.focusId = null; state.visible = []; state.shownEdges = []; state.groups = []; state.overlay = {}; state.flash = null;
+    state.view = "objects"; state.mode = "catalog"; state.query = ""; state.kinds.clear();
+    if (state.graph) showAll();
   }
-  const visibleNode = (id) => state.visible.find((n) => n.id === id);
-  const center = () => state.visible[0];
-  const bounds = (point = { x: 0, y: 0 }) => {
-    const nodes = state.visible.length ? state.visible : [{ x: 0, y: 0, w: 160, h: 60 }];
-    return {
-      l: point.x + Math.min(...nodes.map((n) => n.x - n.w / 2)) - 50,
-      r: point.x + Math.max(...nodes.map((n) => n.x + n.w / 2)) + 50,
-      t: point.y + Math.min(...nodes.map((n) => n.y - n.h / 2)) - 95,
-      b: point.y + Math.max(...nodes.map((n) => n.y + n.h / 2)) + 50,
-    };
-  };
-  function hit(x, y) {
-    for (const node of [...state.visible].reverse())
-      if (Math.abs(x - node.x) <= node.w / 2 && Math.abs(y - node.y) <= node.h / 2) return node;
-    return null;
-  }
-  function nodeRelations(id) {
-    return allEdges().filter((edge) => edge.from === id || edge.to === id);
+  function setSimulation(snapshot) {
+    state.overlay = snapshot?.overlay ?? {};
+    state.flash = snapshot?.latest?.touched ? { id: snapshot.latest.touched, at: Date.now() } : null;
+    if (state.flash?.id && state.mode === "focus" && !state.visible.some((n) => n.id === state.flash.id)) focus(state.flash.id);
   }
   const sourceInfo = () => ({
     status: state.status, message: state.message, connected: !!state.graph,
@@ -83,47 +146,90 @@
     counts: state.graph?.counts ?? null, warnings: state.graph?.warnings ?? null,
     ageSeconds: state.ageSeconds,
   });
-  function draw(ctx, point, colors) {
-    ctx.save(); ctx.translate(point.x, point.y);
+  function bounds(point = { x: 0, y: 0 }) {
+    const all = state.visible.length ? state.visible : [{ x: 0, y: 0, w: 170, h: 65 }];
+    return {
+      l: point.x + Math.min(...all.map((n) => n.x - n.w / 2)) - 90,
+      r: point.x + Math.max(...all.map((n) => n.x + n.w / 2)) + 90,
+      t: point.y + Math.min(...all.map((n) => n.y - n.h / 2)) - 120,
+      b: point.y + Math.max(...all.map((n) => n.y + n.h / 2)) + 65,
+    };
+  }
+  function hit(x, y) {
+    for (const n of [...state.visible].reverse()) if (Math.abs(x - n.x) <= n.w / 2 && Math.abs(y - n.y) <= n.h / 2) return n;
+    return null;
+  }
+  const nodeRelations = (id) => rawEdges().filter((e) => e.from === id || e.to === id);
+  function draw(ctx, origin, colors, zoom = 1) {
+    ctx.save(); ctx.translate(origin.x, origin.y);
     const ink = colors.ink, muted = colors.muted, paper = colors.paper, outline = colors.strong;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = muted; ctx.font = "500 12px " + colors.body;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = muted;
+    ctx.font = "600 13px " + colors.body;
     if (!state.graph) {
-      ctx.fillText("Things Loop · Not connected", 0, -16);
-      ctx.font = "400 11px " + colors.body;
-      ctx.fillText(short(state.message || "No private local export configured", 67), 0, 7);
+      ctx.fillText("THINGS LOOP · SOURCE NOT CONNECTED", 0, -16);
+      ctx.font = "400 12px " + colors.body;
+      ctx.fillText(short(state.message || "No private local snapshot provided", 70), 0, 9);
       ctx.restore(); return;
     }
-    ctx.fillText("THINGS LOOP · LOCAL SNAPSHOT · NOT LIVE", 0, -210);
-    ctx.font = "400 11px " + colors.body;
-    ctx.fillText(state.graph.nodes.length + " objects · " + state.graph.edges.length +
-      " relationships · " + (state.ageSeconds === null ? "age unknown" : "export age " + Math.floor(state.ageSeconds / 3600) + "h"), 0, -189);
-    ctx.strokeStyle = outline; ctx.lineWidth = 1.2;
-    for (const edge of state.shownEdges) {
-      const a = visibleNode(edge.from), b = visibleNode(edge.to);
-      if (!a || !b) continue;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    if (state.mode === "catalog") {
+      for (const group of state.groups) {
+        ctx.fillStyle = colorOf({ type: group.type }, colors);
+        ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.arc(group.x, group.y, 45, 0, 2 * Math.PI); ctx.fill();
+        ctx.fillStyle = paper; ctx.font = "600 13px " + colors.body;
+        ctx.fillText(group.type.toUpperCase(), group.x, group.y - 7);
+        ctx.font = "600 15px " + colors.body; ctx.fillText(String(group.count), group.x, group.y + 12);
+        ctx.globalAlpha = 1;
+      }
     }
+    ctx.lineWidth = 1;
+    // Dense catalog: only draw related lines when the viewer has zoomed in.
+    const by = new Map(state.visible.map((n) => [n.id, n]));
+    if (state.mode === "focus" || zoom > 0.35) for (const e of state.shownEdges) {
+      const a = by.get(e.from), b = by.get(e.to);
+      if (!a || !b) continue;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = e.evidence === "missing" ? colors.red : outline;
+      ctx.globalAlpha = e.evidence === "record" ? 0.55 : 0.28; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    const visibleNames = state.mode === "focus" || zoom > 0.28;
     for (const node of state.visible) {
-      const main = node.id === state.focusId;
-      const border = node.type === "case" ? colors.accent :
-        node.type === "phase" ? (colors.families?.[1]?.[0] ?? ink) :
-        (colors.families?.[0]?.[0] ?? ink);
-      ctx.fillStyle = paper; ctx.strokeStyle = border; ctx.lineWidth = main ? 2.2 : 1.2;
-      ctx.beginPath(); ctx.roundRect(node.x - node.w / 2, node.y - node.h / 2, node.w, node.h, 12); ctx.fill(); ctx.stroke();
-      ctx.font = "500 10px " + colors.body; ctx.fillStyle = muted;
-      const kind = node.type === "case" ? "CASE " + words(node.properties.stage).toUpperCase() :
-        node.type === "phase" ? "PHASE " + words(node.properties.phase_order) : "NOTE";
-      ctx.fillText(kind, node.x, node.y - 11);
-      ctx.fillStyle = ink; ctx.font = "600 12px " + colors.body;
-      ctx.fillText(short(node.label, 23), node.x, node.y + 10);
+      const color = colorOf(node, colors), props = { ...node.properties, ...(state.overlay?.[node.id] ?? {}) };
+      const lit = state.flash?.id === node.id && Date.now() - state.flash.at < 1300;
+      if (lit) {
+        ctx.beginPath(); ctx.arc(node.x, node.y, 42 + (Date.now() - state.flash.at) / 65, 0, 2 * Math.PI);
+        ctx.strokeStyle = colors.accent; ctx.lineWidth = 3; ctx.globalAlpha = 0.65; ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      ctx.beginPath(); ctx.roundRect(node.x - node.w / 2, node.y - node.h / 2, node.w, node.h, 11);
+      ctx.fillStyle = paper; ctx.strokeStyle = node.status === "historical" ? outline : color;
+      ctx.lineWidth = node.id === state.focusId ? 2.5 : 1.3;
+      if (node.status === "historical") ctx.setLineDash([4, 3]);
+      ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+      if (!visibleNames) {
+        ctx.beginPath(); ctx.arc(node.x, node.y, 7, 0, 2 * Math.PI);
+        ctx.fillStyle = color; ctx.fill();
+        continue;
+      }
+      ctx.font = "600 10px " + colors.body; ctx.fillStyle = color;
+      const stateWord = props.stage || props.status || (node.status === "historical" ? node.evidence : "");
+      ctx.fillText(short(node.type.toUpperCase() + (stateWord ? " · " + String(stateWord).toUpperCase() : ""), 28),
+        node.x, node.y - 15);
+      ctx.fillStyle = ink; ctx.font = "600 12px " + colors.body; ctx.fillText(short(node.label, 25), node.x, node.y + 2);
+      const flags = labelsOf(node);
+      const bottom = state.overlay?.[node.id] ? "SIMULATED · NOT SAVED" : flags.slice(0, 2).join(" · ") ||
+        (node.status === "historical" ? "HISTORICAL TOPOLOGY" : "SOURCE RECORD");
+      ctx.fillStyle = state.overlay?.[node.id] ? colors.accent : muted;
+      ctx.font = "400 9px " + colors.body; ctx.fillText(short(bottom, 30), node.x, node.y + 19);
     }
     ctx.restore();
   }
   globalThis.JeviewLoopGraph = Object.freeze({
-    setResult, focus, center, sourceInfo, bounds, hit, draw, nodeRelations,
-    visible: () => state.visible,
-    cases: () => allNodes().filter((n) => n.type === "case"),
-    byId,
+    setResult, sourceInfo, bounds, hit, draw, nodeRelations,
+    showAll, focus, center: () => state.visible.find((n) => n.id === state.focusId) ?? state.visible[0] ?? null,
+    visible: () => state.visible, all: () => rawNodes(), edges: () => rawEdges(), cases: () => rawNodes().filter((n) => n.type === "case"),
+    processes: () => rawNodes().filter((n) => n.type === "process"), byId, labelsOf, axesOf,
+    facets: () => TYPES.map((type) => ({ type, count: rawNodes().filter((n) => n.type === type).length })).filter((x) => x.count),
+    mode: () => state.mode, perspective: () => state.view, setView, setSearch, toggleType,
+    search: () => state.query, selectedType: () => [...state.kinds][0] ?? null,
+    setSimulation, overlayFor: (id) => state.overlay?.[id] ?? null,
   });
 })();
