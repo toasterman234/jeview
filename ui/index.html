@@ -8,10 +8,12 @@
 <link rel="stylesheet" href="/_/ui/app.css">
 <script src="/_/ui/sample-graph.js" defer></script>
 <script src="/_/ui/things-loop-graph.js" defer></script>
+<script src="/_/ui/loop-simulator.js" defer></script>
+<script src="/_/ui/loop-workspace.js" defer></script>
 <script src="/_/ui/app.js" defer></script>
 </head>
 <body>
-<canvas id="map" aria-label="Live map of Jev calls: Jev in the centre, the questions it is asked around it, and the answers it gave around each question"></canvas>
+<canvas id="map" aria-label="Jeview canvas: source-backed Things Loop objects and processes, sandbox simulations or live Jev decisions depending on selected view"></canvas>
 
 <header class="bar">
   <div class="brand">
@@ -26,7 +28,10 @@
     <button id="view-decisions" class="ghost small" type="button" aria-pressed="true">Decisions</button>
     <button id="view-context" class="ghost small" type="button" aria-pressed="false" title="Synthetic example only">Context <span aria-hidden="true">·</span> sample</button>
     <button id="view-harness" class="ghost small" type="button" aria-pressed="false" title="Synthetic example only">Harness <span aria-hidden="true">·</span> sample</button>
-    <button id="view-loop" class="ghost small" type="button" aria-pressed="false">Things Loop</button>
+    <button id="view-loop" class="ghost small" type="button" aria-pressed="false">Objects</button>
+    <button id="view-processes" class="ghost small" type="button" aria-pressed="false">Processes</button>
+    <button id="view-simulate" class="ghost small" type="button" aria-pressed="false">Simulate</button>
+    <button id="view-observe" class="ghost small" type="button" aria-pressed="false" title="Historical evidence only; not a live event feed">Observe</button>
   </nav>
   <div class="tools">
     <button id="chat-toggle" class="icon" aria-label="Open chat" aria-expanded="false" data-tip="Chat">
