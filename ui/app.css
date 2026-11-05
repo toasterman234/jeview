@@ -264,3 +264,23 @@ pre.raw { font: 11.5px/1.5 var(--mono); background: var(--wash); border-radius: 
   .pulse.on, .recent li { animation: none; }
   .drawer, .chat-panel { transition: none; }
 }
+
+
+/* Read-only example layers live on the original Jeview canvas; this control never starts an agent. */
+.graph-views {
+  position: fixed; top: 73px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 3px; padding: 3px;
+  max-width: calc(100vw - 22px); z-index: 4;
+  border: 1px solid var(--hairline); border-radius: 999px;
+  background: var(--panel); box-shadow: 0 2px 12px rgb(0 0 0 / 7%);
+}
+.graph-views .ghost.small { border-color: transparent; background: transparent; padding: 5px 9px; white-space: nowrap; font-size: 11.5px; }
+.graph-views .ghost[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.graph-views .ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 1100px) {
+  .graph-views { top: 69px; }
+}
+@media (max-width: 720px) {
+  .graph-views { top: 60px; }
+  .graph-views .ghost.small { padding: 5px 7px; font-size: 10.5px; }
+}

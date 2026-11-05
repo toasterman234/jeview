@@ -66,6 +66,8 @@
   const remembered = (name, fallback) => { try { const value = localStorage.getItem(`jeview.${name}`); return value === null ? fallback : value === "1"; } catch { return fallback; } };
   const remember = (name, on) => { try { localStorage.setItem(`jeview.${name}`, on ? "1" : "0"); } catch { /* not remembered, still applied */ } };
   const data = { records: [], byId: new Map(), cursor: 0, older: 0, meta: null, run: null, full: new Map(), selected: null, focus: null, tab: "recent", clock: 0, traces: remembered("traces", true), colours: remembered("colours", true), dedupe: remembered("dedupe", true) };
+  const sampleGraph = globalThis.JeviewSampleGraph;
+  data.mapMode = "decisions"; // The existing live decision map remains the default.
   const visible = (record) => data.run === null || record.label === data.run;
   const eventOf = (record, q) => `${record.id}:${q.id}`;
   /** The call and question an event id names, when that call is here. */
@@ -507,7 +509,7 @@
   const view = { k: 1, x: 0, y: 0, user: !remembered("autozoom", true) };
   /** Until someone zooms or pans, the view eases to fit the whole map into the free area. */
   function fit() {
-    const B = world.bounds, A = world.area;
+    const B = data.mapMode === "decisions" ? world.bounds : sampleGraph.bounds(data.mapMode, world.jev), A = world.area;
     if (view.user || !B || hover) return; // never moves under the pointer
     const k = clamp(Math.min((A.r - A.l) / (B.r - B.l + 40), (A.b - A.t) / (B.b - B.t + 40)), 0.35, 1);
     const x = (A.l + A.r) / 2 - ((B.l + B.r) / 2) * k, y = (A.t + A.b) / 2 - ((B.t + B.b) / 2) * k;
@@ -584,6 +586,14 @@
     requestAnimationFrame(draw);
   }
   function paint(now) {
+    if (data.mapMode !== "decisions") {
+      fit();
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.k, view.k);
+      sampleGraph.draw(ctx, world.jev, colors, data.mapMode);
+      ctx.restore();
+      return;
+    }
     measure();
     keepArranged(now);
     glide();
@@ -747,6 +757,10 @@
   // ---------- hover and click on the map ----------
   const inside = (body, x, y, pad = 4) => Math.abs(x - body.x) <= body.w / 2 + pad && Math.abs(y - body.y) <= body.h / 2 + pad;
   function nodeAt(x, y) {
+    if (data.mapMode !== "decisions") {
+      const node = sampleGraph.hit(data.mapMode, x - world.jev.x, y - world.jev.y);
+      return node ? { node, kind: "sample" } : null;
+    }
     if (Math.hypot(world.jev.x - x, world.jev.y - y) < 18) return { node: world.jev, kind: "jev" };
     for (const kind of present()) {
       if (kind.special) { if (kind.revealed && inside(kind, x, y)) return { node: kind, kind: "invalid" }; continue; }
@@ -806,6 +820,20 @@
   $("#colours").addEventListener("click", () => { data.colours = !data.colours; remember("colours", data.colours); showToggles(); });
   $("#autozoom").addEventListener("click", () => { view.user = !view.user; remember("autozoom", !view.user); showToggles(); });
   showToggles();
+  // The fixture layers share the canvas and drawer. They never change Jev's live call model.
+  function switchGraph(mode) {
+    data.mapMode = mode;
+    hover = null; hideTip();
+    view.user = false; showToggles();
+    for (const name of ["decisions", "context", "harness"]) {
+      const button = $(`#view-${name}`);
+      button.setAttribute("aria-pressed", String(mode === name));
+    }
+    closeDrawer(); about();
+  }
+  for (const name of ["decisions", "context", "harness"]) {
+    $(`#view-${name}`).addEventListener("click", () => switchGraph(name));
+  }
   canvas.addEventListener("pointermove", (event) => {
     if (drag && (drag.moved || Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 4)) {
       drag.moved = true; canvas.style.cursor = "grabbing"; hideTip();
@@ -817,6 +845,7 @@
     hover = nodeAt(...toWorld(event.clientX, event.clientY));
     canvas.style.cursor = hover?.kind === "question" ? "grab" : hover ? "pointer" : "default";
     if (!hover || hover.kind === "question") return hideTip(); // a hovered question shows itself whole on the map
+    if (hover.kind === "sample") return showTip(event.clientX, event.clientY, h("b", {}, hover.node.label), h("div", { class: "sub" }, `Sample ${hover.node.type.replaceAll("_", " ")} · click to inspect`));
     if (hover.kind === "invalid") showTip(event.clientX, event.clientY, h("b", {}, "Invalid"), ` · ${plural(hover.node.count, "call")} Jev rejected`, h("div", { class: "sub" }, "Click to see them"));
     else if (hover.kind === "jev") showTip(event.clientX, event.clientY, h("b", {}, "Jev"), h("div", { class: "sub" }, `${plural(data.records.filter(visible).length, "call")} so far`));
     else { const o = hover.node, called = nameOf(o.kind.run, o.kind.name, o.name); showTip(event.clientX, event.clientY, h("b", {}, called), ` · chosen ${plural(o.count, "time")}`, h("div", { class: "sub" }, `${called === human(o.name) ? "" : `Its key is ${o.name}. `}${typeof o.latest === "number" ? `Jev's latest probability ${pct(o.latest)}. ` : ""}${o.count ? "Click for the calls behind it" : ""}`)); }
@@ -826,7 +855,20 @@
     if (drag?.moved) return; // the end of a pan, not a click
     const hit = nodeAt(...toWorld(event.clientX, event.clientY));
     if (!hit) { if (drawer.classList.contains("open")) closeDrawer(); else focus(null); return; }
-    if (hit.kind === "invalid") openList("Invalid calls", "Calls Jev rejected, newest first", [...hit.node.ids].reverse());
+    if (hit.kind === "sample") {
+      const node = hit.node, links = sampleGraph.relations(data.mapMode, node.id);
+      data.selected = null; markSelected();
+      openDrawer(
+        h("p", { class: "eyebrow" }, "Synthetic sample · not connected"),
+        h("h2", { class: "d-title" }, node.label),
+        h("p", { class: "d-meta" }, `Type: ${node.type.replaceAll("_", " ")} · ID: ${node.id} · Status: sample`),
+        h("p", {}, node.detail),
+        h("p", { class: "eyebrow", style: "margin-top:20px" }, "Illustrative relationships"),
+        ...links.map((edge) => h("p", { class: "quiet", style: "margin-bottom:10px" }, `${edge.from} — ${edge.type.replaceAll("_", " ")} → ${edge.to}`)),
+        h("p", { class: "quiet", style: "margin-top:20px" }, "No repository, context document, agent, policy, tool or workflow has been connected. No agent can be triggered here.")
+      );
+    }
+    else if (hit.kind === "invalid") openList("Invalid calls", "Calls Jev rejected, newest first", [...hit.node.ids].reverse());
     else if (hit.kind === "answer") openList(nameOf(hit.node.kind.run, hit.node.kind.name, hit.node.name), `${plural(hit.node.count, "time")} the answer to: ${hit.node.kind.asks || human(hit.node.kind.name)}`, [...hit.node.ids].reverse());
     else if (hit.kind === "question") { if (hit.node.pin) release(hit.node); else focus(hit.node.key); } // moved by hand: a click puts it back
     else { data.tab = "recent"; data.focus = null; renderCorner(true); }
@@ -1107,8 +1149,8 @@
     const m = data.meta; if (!m) return;
     $("#run-line").textContent = `${location.origin}/v1/systemone`;
     $("#about-facts").replaceChildren(h("span", {}, "Each call is saved whole, what was asked and what Jev answered, in a database ", h("span", { class: "hint", "data-tip": m.database }, "on this computer"), "."));
-    $("#nokey").hidden = !!m.keyed;
-    $("#empty").hidden = data.records.length > 0;
+    $("#nokey").hidden = !!m.keyed || data.mapMode !== "decisions";
+    $("#empty").hidden = data.records.length > 0 || data.mapMode !== "decisions";
   }
   // one popover at a time: how to use, the Jev key, or the layout menu
   const POPOVERS = [["#about", "#about-panel"], ["#settings", "#settings-panel"], ["#layout", "#layout-panel"]];
