@@ -196,6 +196,8 @@ def main():
     out = Path(args.out).expanduser().resolve()
     if out.is_relative_to(root):
         parser.error("Refusing to write a private export into the Things Loop source tree")
+    if out.is_relative_to(Path(__file__).resolve().parents[1]):
+        parser.error("Refusing to write a private export into the public Jeview source tree")
     result = export(root)
     out.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     payload = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode()
