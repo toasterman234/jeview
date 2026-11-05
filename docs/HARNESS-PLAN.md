@@ -28,11 +28,12 @@ Every observed edge must refer to a source event/call, revision and identity; fi
 - Default remains the current decision trace; no changes to Jev request/response or server security.
 - Verified `npm run typecheck`, `npm run check:pages`, `npm test`, and a headless Chrome smoke covering the original canvas, both fixture modes, sample-node click inspection, and return to Decisions. This confirms the fixture UI interaction only, not real connectors or agent actions.
 
-### Phase B — read-only observed resource model (NOT STARTED)
-- Decide resource ownership and incoming format; model stable identities and change history.
-- Attach bounded context snapshots/repository/doc source references to Jev call IDs; preserve exact byte stream sent to TypeSafe. No automatic upload of complete files or session logs.
-- Add stale/unavailable/unknown styling and a source/permission drawer.
-- Verify a known fixture, the exact input context sent to Jev, and replay fidelity.
+### Phase B — read-only observed resource model (PARTIAL IMPLEMENTATION; work #3; not promoted)
+- **Implemented on separate branch:** an opt-in, offline exporter for a private, source-hashed local Things Loop snapshot; an explicit bounded read-only API; and a native Jeview Things Loop graph view centered on Case/Note, recorded Phases and typed NoteLinks.
+- The export is metadata-only and is never checked into this public repository. Exporter is separate from Jeview's Node 24 runtime; code and contract in [THINGS-LOOP-BRIDGE.md](THINGS-LOOP-BRIDGE.md).
+- Disconnected/malformed/aged snapshots are labeled honestly; case details, source UUIDs, exact source files, edge direction and rationales are inspectable in the existing drawer.
+- **Still to implement:** verified current Mac export, export freshness/refresh integration, source-to-Jev-call context linkage, bounded context injection, decision candidate construction, full change-history mapping and replay of actual Jev decisions with source lineage.
+- **Gates:** synthetic tests + browser proof for UI/code; **Mac record read-back and source provenance remain unverified** and cannot be inferred from GitHub mirror or test fixture. No automatic context sent to TypeSafe. No dispatch.
 
 ### Phase C — decision candidates and harness graph (NOT STARTED)
 - Define versioned capability manifests (agent / behavior / skill / tool / workflow) and deterministic eligibility/policy filtering.
@@ -60,3 +61,4 @@ Every observed edge must refer to a source event/call, revision and identity; fi
 - 2026-11-04: created `explore/composable-harness-view` from that commit. Slice A is a separate branch, not a deployment.
 - Verified: source read-back for plan, fixture, canvas hooks, view controls, test and parse checks. GitHub Actions [push run 41937585687](https://github.com/toasterman234/jeview/actions/runs/41937585687) completed successfully at `10dcb3d`; job log states: `Browser smoke passed: default live decisions, sample context/harness rendering, click inspector, and return to decisions.` Typecheck, JS parse and unit tests also passed.
 - Still open: maintainer review/promotion; actual context adapters, capability registry, real decisions using those options, simulation, and real gated agent triggering. Synthetic fixtures are not runtime evidence.
+- 2026-11-04: Work #3 authorized for a bounded, **read-only** Things Loop source-bridge implementation, stacked on draft Phase A without merge. Code is implemented and synthetic end-to-end tests pass on the isolated branch; no private records have been copied into public Jeview. The current governed Mac runner's latest push-lane job was queued and the control-plane runner issue #182 remains open, so a live Mac source read-back is not established.

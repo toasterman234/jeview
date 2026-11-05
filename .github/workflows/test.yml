@@ -16,3 +16,5 @@ jobs:
       - run: npm run check:pages
       - run: npm test
       - run: node test/browser-smoke.mjs
+      - run: python3 -m venv /tmp/jeview-yaml-test && /tmp/jeview-yaml-test/bin/pip install --disable-pip-version-check PyYAML==6.0.3
+      - run: /tmp/jeview-yaml-test/bin/python -m unittest discover -s test -p 'test_export_*.py' -v

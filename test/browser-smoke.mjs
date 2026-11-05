@@ -2,7 +2,7 @@
 // The real Jeview server has no Jev key, so this cannot call TypeSafe or dispatch any agent.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -13,7 +13,33 @@ if (!executable) throw Error("Browser smoke requires Chrome or Chromium; not a p
 
 const dir = mkdtempSync(join(tmpdir(), "jeview-browser-"));
 const profile = mkdtempSync(join(tmpdir(), "jeview-chrome-"));
-const { server, store } = createJeview({ dir });
+const snapshotPath = join(dir, "loop-private.json");
+const fixture = {
+  format: "jeview.things-loop/v1", exportedAt: new Date().toISOString(),
+  source: { name: "Things Loop", kind: "local_export", authority: "unverified", revision: "a".repeat(64),
+    files: [{ path: "data/dogfood-note.yaml", sha256: "b".repeat(64) }] },
+  nodes: [
+    { id: "note:TEST0000000000000001", type: "note", label: "Example Things case",
+      properties: { intent_labels: ["Scope"] },
+      source: { path: "data/dogfood-note.yaml", id: "TEST0000000000000001" }, evidence: "record", status: "snapshot" },
+    { id: "case:TEST0000000000000001", type: "case", label: "Example Things case",
+      properties: { stage: "working", destination: "things_case" },
+      source: { path: "data/dogfood-composite.yaml", id: "TEST0000000000000001" }, evidence: "record", status: "snapshot" },
+    { id: "phase:TEST0000000000000001:1", type: "phase", label: "Scope",
+      properties: { phase_order: 1, intent: "Scope" },
+      source: { path: "data/dogfood-composite.yaml", id: "TEST0000000000000001" }, evidence: "record", status: "snapshot" },
+  ],
+  edges: [
+    { from: "case:TEST0000000000000001", to: "note:TEST0000000000000001", type: "based_on",
+      rationale: "", source: { path: "data/dogfood-composite.yaml", index: 0 }, evidence: "record" },
+    { from: "case:TEST0000000000000001", to: "phase:TEST0000000000000001:1", type: "has_phase",
+      rationale: "", source: { path: "data/dogfood-composite.yaml", index: 1 }, evidence: "record" },
+  ],
+  counts: { notes: 1, cases: 1, phases: 1, links: 0 },
+  warnings: { unresolved_links: 0 },
+};
+writeFileSync(snapshotPath, JSON.stringify(fixture));
+const { server, store } = createJeview({ dir, thingsLoopSnapshot: snapshotPath });
 let chrome, ws;
 const retry = async (fn, label, limit = 12000) => {
   const end = Date.now() + limit;
@@ -34,7 +60,7 @@ try {
   ], { stdio: "ignore" });
   chrome.on("error", () => {}); // The timed readiness check below reports startup failure.
   const debugPort = await retry(() => existsSync(join(profile, "DevToolsActivePort")) &&
-    Number(readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]), "Chrome DevTools port");
+    Number(readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]), "Chrome DevTools port", 30000); // Parallel CI Chrome startup can be slow.
   const endpoint = await retry(async () => {
     const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
     return pages.find((page) => page.type === "page" && page.url.includes(`127.0.0.1:${port}`))?.webSocketDebuggerUrl;
@@ -98,9 +124,21 @@ try {
   await retry(() => evaluate('window.__canvasWords.includes("Agent")'), "Harness nodes drawn on original canvas");
   await clickNode("agent");
   await retry(() => evaluate('document.querySelector("#drawer-body").textContent.includes("Agent") && document.querySelector("#drawer-body").textContent.includes("Synthetic sample")'), "Agent inspector reflects sample provenance");
+  // Switch to the real-source *format*, using only an innocuous synthetic local snapshot.
+  await evaluate('window.__canvasWords = []; document.querySelector("#view-loop").click()');
+  await retry(() => evaluate('window.JeviewLoopGraph.sourceInfo().connected === true'), "Things Loop local read API");
+  await retry(() => evaluate('document.querySelector("#corner").textContent.includes("Things Loop") && document.querySelector("#corner .qlist button")'), "Cases appear in Jeview sidebar");
+  await evaluate('document.querySelector("#corner .qlist button").click()');
+  assert.equal(await evaluate('window.JeviewLoopGraph.center().type'), "case");
+  await retry(() => evaluate('window.__canvasWords.some(text => text.includes("THINGS LOOP"))'), "Things Loop native-canvas draw");
+  const point = await evaluate('(() => { const t = window.__moves.slice(-2), k = window.__zoom; return [t[0][0] + t[1][0] * k, t[0][1] + t[1][1] * k]; })()');
+  await evaluate('document.querySelector("#map").dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: ' + point[0] + ', clientY: ' + point[1] + ' }))');
+  await retry(() => evaluate('document.querySelector("#drawer").classList.contains("open") && document.querySelector("#drawer-body").textContent.includes("Example Things case") && document.querySelector("#drawer-body").textContent.includes("has phase")'), "Things Loop case inspector and relationship");
+  assert.equal(await evaluate('window.JeviewLoopGraph.sourceInfo().authority'), "unverified");
   await evaluate('document.querySelector("#view-decisions").click()');
   assert.equal(await evaluate('document.querySelector("#view-decisions").getAttribute("aria-pressed")'), "true");
-  console.log("Browser smoke passed: default live decisions, sample context/harness rendering, click inspector, and return to decisions.");
+  assert.equal(store.count(), 0, "read-only views cannot call Jev");
+  console.log("Browser smoke passed: Decisions/Context/Harness and private snapshot Things Loop native-canvas rendering, inspect and return.");
 } finally {
   ws?.close();
   if (chrome) {

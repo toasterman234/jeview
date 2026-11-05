@@ -13,6 +13,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { readThingsLoopSnapshot } from "./things-loop.ts";
 
 export const JEV_PATH = "/v1/systemone";
 /** TypeSafe's endpoint: where every Jev call goes, with the Jev key. */
@@ -272,7 +273,7 @@ A record's "key" is the sha256 of the exact body sent to Jev.
 `;
 }
 
-export type JeviewOptions = { dir: string; jevEndpoint?: string; port?: number; fetch?: typeof fetch; ui?: string | URL };
+export type JeviewOptions = { dir: string; jevEndpoint?: string; port?: number; fetch?: typeof fetch; ui?: string | URL; thingsLoopSnapshot?: string };
 export type Jeview = { server: Server; store: JeviewStore };
 
 export function createJeview(options: JeviewOptions): Jeview {
@@ -340,6 +341,8 @@ export function createJeview(options: JeviewOptions): Jeview {
       // itself stays reachable, since a link to it from another site is that kind of request too
       if (req.headers["sec-fetch-site"] === "cross-site" && url.pathname.startsWith("/_/api/")) return send(res, 403, { error: "The API is not for pages on other sites" });
       if (url.pathname === "/_/api/settings") return send(res, 200, keyView(jevKey()));
+      // Optional, local-only read of a validated user-generated metadata snapshot, never the Things source files.
+      if (url.pathname === "/_/api/sources/things-loop") return send(res, 200, readThingsLoopSnapshot(options.thingsLoopSnapshot));
       if (url.pathname === "/llms.txt") {
         res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
         return void res.end(llmsText(`http://${req.headers.host}`, !!jevKey()));
