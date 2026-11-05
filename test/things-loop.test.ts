@@ -62,7 +62,12 @@ test("an explicit private snapshot is validated, bounded and stripped of unsuppo
 });
 
 test("historical system nodes preserve typed provenance and do not become live records", () => {
-  const graph = example();
+  const graph = example() as unknown as {
+    source: { files: { path: string; sha256: string }[] };
+    nodes: Record<string, unknown>[];
+    edges: Record<string, unknown>[];
+    counts: Record<string, number>;
+  };
   graph.source.files.push({ path: "system-graph/graph.json", sha256: "c".repeat(64) });
   graph.nodes.push({ id: "sys:p-route", type: "process", label: "Test process",
     properties: { kind: "process", perspective: "processes", detail: "No actual execution" },
