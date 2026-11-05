@@ -228,7 +228,9 @@
       ctx.fillStyle = ink; ctx.font = "600 12px " + colors.body; ctx.fillText(short(node.label, 25), node.x, node.y + 2);
       const flags = labelsOf(node);
       const bottom = state.overlay?.[node.id] ? "SIMULATED · NOT SAVED" : flags.slice(0, 2).join(" · ") ||
-        (node.status === "historical" ? "HISTORICAL TOPOLOGY" : "SOURCE RECORD");
+        (node.status !== "historical" ? "SOURCE RECORD" :
+          ({ observed: "OBSERVED TOPOLOGY", declared: "DECLARED TOPOLOGY", inferred: "INFERRED TOPOLOGY",
+            missing: "MISSING FROM SOURCE", conflicting: "CONFLICTING SOURCE" })[node.evidence] ?? "HISTORICAL TOPOLOGY");
       ctx.fillStyle = state.overlay?.[node.id] ? colors.accent : muted;
       ctx.font = "400 9px " + colors.body; ctx.fillText(short(bottom, 30), node.x, node.y + 19);
     }

@@ -129,7 +129,7 @@
         .sort((a, b) => a.type.localeCompare(b.type) || a.label.localeCompare(b.label)), navigate));
     } else if (view === "processes") {
       const processes = graph.processes();
-      body.append(h("p", { class: "quiet" }, "These are extracted historical system processes, not executable process definitions."));
+      body.append(h("p", { class: "quiet" }, "Declared system processes and their recorded dependencies, not executable process definitions."));
       body.append(h("div", { class: "loop-actions" },
         h("button", { class: "ghost small", onclick: () => {
           draft = structuredClone(Sim.DEFAULT); reset(); hooks.switchTo("simulate");
@@ -154,7 +154,8 @@
           } }, "Model in sandbox")));
       }
       body.append(nodeList(h, processes, navigate, 100));
-      if (!processes.length) body.append(h("p", { class: "quiet" }, "The optional system-graph/graph.json topology is missing from this export."));
+      if (!processes.length) body.append(h("p", { class: "quiet" },
+        "This export names no process components. Processes come from the declared system manifest; the observed system graph records no process kind."));
     } else if (view === "observe") {
       const edges = graph.edges().filter((e) => e.evidence === "observed");
       body.append(h("p", { class: "quiet" }, "NOT LIVE. These are source assertions from a historical topology snapshot. No current event journal, run telemetry or live effect feed is connected."));

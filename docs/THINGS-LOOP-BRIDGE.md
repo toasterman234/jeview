@@ -14,8 +14,10 @@ The exporter reads a specific Things Loop source directory, without modifying it
 - `data/dogfood-composite.yaml` and `linkml/composites.yaml` — Case stage, destination, next step/owner and ordered Phase nodes.
 - `data/dogfood-links.yaml` — preserved directed NoteLinks, typed predicate and bounded rationale.
 - Optional `data/highlight-comments.yaml` — only when the chosen local source contains it, with first-class comment NoteLinks.
+- Optional `system-manifest.yaml` — the **declared** components and their typed dependencies. This is the only local source that names processes (`process.*`), so it is what the Processes view reads. Component `path:` values are never exported; an unknown `role` is skipped and counted, never guessed into a kind.
+- Optional `system-graph/graph.json` — previously extracted infrastructure topology. It records **no process kind** at all; against real data the Processes view is empty if only this file exists.
 
-Accepted predicates: `links_to`, `branches_from`, `prompted_by`, `gates`, `indicts`, `derived_from`. Every node and relationship retains a source path, stable identity and/or index. Broken links are counted but **not turned into invented nodes**.
+Accepted predicates: `links_to`, `branches_from`, `prompted_by`, `gates`, `indicts`, `derived_from`, `supersedes_direction`. `supersedes_direction` is live in the Loop records but is not yet a permissible value in `things.linkml.yaml`; it is exported as recorded so the schema gap stays visible instead of silently dropping a link. Every node and relationship retains a source path, stable identity and/or index. Broken links are counted but **not turned into invented nodes**.
 
 The exporter uses PyYAML from the Things Loop Python environment as an optional **offline export tool**. **Jeview's running server remains Node 24 standard-library-only.** It never imports Python/YAML packages, scans arbitrary paths, or makes any external source request.
 

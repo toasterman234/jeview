@@ -92,6 +92,41 @@ test("historical system nodes preserve typed provenance and do not become live r
   assert.throws(() => parseThingsLoopSnapshot(mutation), /node/);
 });
 
+test("a declared system manifest contributes processes without becoming live records", () => {
+  const graph = example() as unknown as {
+    source: { files: { path: string; sha256: string }[] };
+    nodes: Record<string, unknown>[];
+    edges: Record<string, unknown>[];
+    counts: Record<string, number>;
+  };
+  graph.source.files.push({ path: "system-manifest.yaml", sha256: "d".repeat(64) });
+  graph.nodes.push({ id: "sys:manifest:process_build_pipeline", type: "process", label: "process.build_pipeline",
+    properties: { kind: "process", role: "build_pipeline", perspective: "manifest", detail: "ordered build" },
+    source: { path: "system-manifest.yaml", id: "process.build_pipeline" },
+    evidence: "declared", status: "historical" });
+  graph.nodes.push({ id: "sys:manifest:output_pages", type: "output", label: "output.pages",
+    properties: { kind: "output", role: "generated_view", perspective: "manifest" },
+    source: { path: "system-manifest.yaml", id: "output.pages" },
+    evidence: "declared", status: "historical" });
+  graph.edges.push({ from: "sys:manifest:process_build_pipeline", to: "sys:manifest:output_pages",
+    type: "produces", rationale: "",
+    source: { path: "system-manifest.yaml", index: 0 }, evidence: "observed" });
+  graph.counts.components = 2;
+  graph.counts.system_links = 1;
+  const parsed = parseThingsLoopSnapshot(graph);
+  assert.equal(parsed.nodes.at(-2)?.type, "process");
+  assert.equal(parsed.nodes.at(-2)?.properties.role, "build_pipeline");
+  assert.equal(parsed.nodes.at(-2)?.source.path, "system-manifest.yaml");
+  assert.equal(parsed.edges.at(-1)?.type, "produces");
+  const claimed = example() as unknown as { nodes: Record<string, unknown>[]; counts: Record<string, number> };
+  claimed.nodes.push({ id: "sys:manifest:process_build_pipeline", type: "process", label: "process.build_pipeline",
+    properties: { kind: "process" },
+    source: { path: "system-manifest.yaml", id: "process.build_pipeline" },
+    evidence: "record", status: "historical" });
+  claimed.counts.components = 1;
+  assert.throws(() => parseThingsLoopSnapshot(claimed), /node/);
+});
+
 test("no configured snapshot or a missing one is never reported as a live connection", () => {
   assert.equal(readThingsLoopSnapshot().status, "not_configured");
   const missing = readThingsLoopSnapshot("/nonexistent/jeview-private-loop-export.json");

@@ -11,7 +11,8 @@ The actual Mac-local React project `things-workflow-canvas` has *not* been modif
 ## Source model / provenance
 
 - Opt-in exporter: `scripts/export-things-loop.py` reads explicit Note/Case/Phase/NoteLink YAML; it preserves UUID/source identity, `labels`, Intent/Topic/State/Kind/Stance axes, phase order, stage and directed link rationales. **Never exports note bodies**, access tokens or private runtime sessions.
-- If present, the private Things Loop `system-graph/graph.json` is read as **historical system topology**: actor, system, store, model, check, code, process, output and gap nodes, and their observed/declared/inferred/missing/conflicting edges. That file is an older deterministic snapshot, **not live process telemetry**. It is optional; the exporter still works if absent.
+- If present, the private Things Loop `system-manifest.yaml` is read as a **declared** component/dependency graph. It is the only local source that names processes, and its `process.*` components plus their `triggers`/`consumed_by`/`produces` relationships are what the **Processes** view shows. Component `path:` values are not exported. An unmapped `role` is skipped and counted rather than guessed into a category.
+- If present, the private Things Loop `system-graph/graph.json` is read as **historical system topology**: actor, system, store, model, check, code, process, output and gap nodes, and their observed/declared/inferred/missing/conflicting edges. That file is an older deterministic snapshot, **not live process telemetry**, and the real one contains no `process` kind. It is optional; the exporter still works if absent.
 - Every export includes a source revision SHA-256 derived from actual input files; the viewer reports the export timestamp, source authority `unverified` and age. The topology part is always marked `historical` even if the JSON was just exported from the Mac.
 - A bounded, validated `GET /_/api/sources/things-loop` exposes only the **explicitly configured local private file** on Jeview's loopback server. The browser cannot choose a filesystem path or write to Things Loop. The public Jeview Git tree contains **code and synthetic test fixtures only**, not private Things Loop data.
 - The historical system graph doesn't include first-class agent/capability objects and the current LinkML schema models only Note, CompositeCase, Phase and NoteLink. Therefore an Agent, Policy, Skill, Resource, Effect or Event must **not** be fabricated as an observed source object. Those require source adapters and verified authority later.
@@ -22,7 +23,7 @@ The top navigation prioritizes **Objects · Processes · Simulate · Observe**, 
 
 In **Objects**, every record is drawn in a category constellation rather than truncating to 14. Type hubs show counts and can be clicked to filter; the left sidebar offers a type/label/text search, inventory and focus/expand. Zooming into a cluster makes individual node labels legible; their text shows type, stage/status and first labels. Clicking a source-backed object opens the existing inspector with the precise source file, original IDs, evidence, full typed label axes and recorded inbound/outbound relationships. Double click resets auto-fit. At a very wide overview the objects appear as dots around readable type hubs to avoid an unusable wall of overlapping text.
 
-In **Processes**, the historical process entities from `system-graph/graph.json` are browsable and focusable. They **describe** observed/declared flows; they have not become compiled process definitions or executable process policy.
+In **Processes**, the declared manifest processes and their recorded dependencies are browsable and focusable. They **describe** declared flows; they have not become compiled process definitions or executable process policy.
 
 In **Simulate**, a process draft contains a typed target object type, a trigger event and **1–8 guard/effect steps**. The browser offers `always`, `stage_is`, `status_is`, `has_intent` guards and `highlight`, `set_stage`, `set_status`, `emit` effects. The engine enforces the modeled CaseStage transition adjacency, denies unsupported stage transitions and invalid types, and never dispatches an agent. Clicking Start, Step, Play, Replay or Reset advances/clears the **isolated simulated overlay**. Active targets pulse on the native canvas and the sidebar records the event, guard result, hypothetical effect and outcome. Definitions saved with `Save local draft` remain in the current browser's `localStorage` only, are not canonical system records and are not automatically approved.
 
@@ -34,6 +35,18 @@ In **Observe**, the historical graph's reported `observed` relations are listed 
 2. **Real data:** the authoritative Mac `~/things-ontology-loop/` was not read in this work due the governed Mac runner being unavailable. The static private GitHub repository snapshot is **not** a live source. See [control-plane issue #182](https://github.com/toasterman234/github-workflows-control-plane/issues/182); do not bypass the governed lane.
 3. **No promotion:** PR #2, PR #4 and this stacked work remain draft/unmerged. Source correctness, deployed app, live agents, approval gates and effects have not been established. The user still will not see these changes on the existing Mac-served React UI.
 4. **Follow-up admitted work:** reconcile the intended single served UI and source of truth; verify the exact Mac file state/build route via the control plane; connect the real event journal/agent capability registry with source citations; promote a process DSL only after authority and simulation acceptance. Execution/dispatch requires a separate gate and independent run/result read-back.
+
+### Mac read-back (2026-11-05)
+
+The authoritative Mac source was read locally on 2026-11-05 with the opt-in exporter (no control-plane runner was involved, no source file was modified):
+
+```
+python3 scripts/export-things-loop.py --root ~/things-ontology-loop \
+  --out ~/.local/share/jeview/things-loop-export.json
+# 444 notes · 118 cases · 228 phases · 535 links · 92 components · 88 system links · 0 unresolved
+```
+
+Two real-data gaps surfaced and were fixed at the source rather than patched in the viewer: the live records use the predicate `supersedes_direction` (absent from `things.linkml.yaml`), and `system-graph/graph.json` records no process at all, so Processes now reads the declared `system-manifest.yaml`. A real Chrome run against that export passed 13 live checks: 882 objects drawn, type facets, search, a source-backed Case inspector, 10 declared processes, Observe marked NOT LIVE, a completed event→guard→effect simulation whose overlay left the source record at `scoped`, Reset, and a 390×844 viewport.
 
 ### Scope disclaimer
 

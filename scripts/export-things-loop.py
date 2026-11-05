@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 import tempfile
 from datetime import datetime, timezone
 
@@ -18,7 +19,11 @@ import yaml
 
 FORMAT = "jeview.things-loop/v1"
 ID = re.compile(r"^[A-Za-z0-9]{12,64}$")
-PREDICATES = {"links_to", "branches_from", "prompted_by", "gates", "indicts", "derived_from"}
+# "supersedes_direction" is recorded in the live Loop data but is not yet a
+# permissible value in linkml/things.linkml.yaml; it is exported as recorded
+# rather than dropped, so the schema gap stays visible instead of losing a link.
+PREDICATES = {"links_to", "branches_from", "prompted_by", "gates", "indicts", "derived_from",
+              "supersedes_direction"}
 SOURCES = [
     ("data/dogfood-note.yaml", "notes", "note"),
     ("linkml/notes-38-labelled.yaml", "notes", "note"),
@@ -30,6 +35,21 @@ OVERLAY = ("data/highlight-comments.yaml", None, "overlay")
 AXES = ("labels", "intent_labels", "inferred_intent_labels", "topic_labels", "state_labels",
         "kind_labels", "stance_labels")
 TOPOLOGY = "system-graph/graph.json"
+# The declared manifest is the authority for recorded *processes*: graph.json is
+# an infrastructure observation and records no process components at all.
+MANIFEST = "system-manifest.yaml"
+# Deterministic role -> viewer kind. An unknown role is skipped and counted,
+# never guessed into a category.
+ROLE_KINDS = {
+    "process": "process", "generator": "process", "build_pipeline": "process",
+    "watcher": "process", "server": "process",
+    "schema": "model", "domain_model": "model", "vocabulary_source": "model", "proof": "model",
+    "capture_source": "store", "instance_data": "store", "curated_record": "store",
+    "event_log": "store", "overlay": "store", "decision_record": "store",
+    "reference_document": "store", "method_document": "store", "template": "store",
+    "generated_artifact": "output", "generated_view": "output", "analysis_projection": "output",
+    "environment": "system",
+}
 COMPONENT_KINDS = {"actor", "system", "store", "model", "check", "code", "process", "output", "gap"}
 EVIDENCE = {"observed", "declared", "inferred", "missing", "conflicting"}
 
@@ -210,6 +230,61 @@ def export(root):
             if not relation or not re.fullmatch(r"[^\x00-\x1f<>]{1,80}", relation):
                 raise ValueError("Invalid system graph relation type")
             edge(src, dst, relation, TOPOLOGY, index, source.get("detail"), source["evidence"])
+
+    # The manifest is a *declaration* of components and their dependencies, and
+    # it is the only local source that names processes. graph.json is an
+    # observation and carries no process kind at all.
+    manifest_file = root / MANIFEST
+    if manifest_file.exists():
+        payload = manifest_file.read_bytes()
+        if len(payload) > 4 * 1024 * 1024:
+            raise ValueError("System manifest exceeds the 4 MiB bound")
+        manifest = yaml.safe_load(payload)
+        if not isinstance(manifest, dict) or not isinstance(manifest.get("components"), list):
+            raise ValueError("Invalid system manifest components")
+        files[MANIFEST] = {"path": MANIFEST, "sha256": hashlib.sha256(payload).hexdigest()}
+        declared = {}
+        skipped_roles = 0
+        for component in manifest["components"]:
+            if not isinstance(component, dict):
+                raise ValueError("Invalid system manifest component")
+            component_id = component.get("id")
+            if not isinstance(component_id, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,90}", component_id):
+                raise ValueError("Invalid system manifest component id")
+            kind = ROLE_KINDS.get(component.get("role"))
+            if not kind:
+                skipped_roles += 1
+                continue
+            node_id = "sys:manifest:" + re.sub(r"[^A-Za-z0-9_-]", "_", component_id)
+            node(node_id, kind, string(component.get("title") or component_id, 160), {
+                "perspective": "manifest", "role": string(component.get("role"), 60),
+                "detail": string(component.get("represents"), 350), "kind": kind,
+            }, MANIFEST, component_id, "declared", "historical")
+            declared[component_id] = node_id
+        relationships = manifest.get("relationships") or []
+        if not isinstance(relationships, list):
+            raise ValueError("Invalid system manifest relationships")
+        skipped_relationships = 0
+        for index, relationship in enumerate(relationships):
+            if not isinstance(relationship, dict):
+                raise ValueError("Invalid system manifest relationship")
+            src = declared.get(relationship.get("from"))
+            dst = declared.get(relationship.get("to"))
+            if not src or not dst:
+                skipped_relationships += 1  # never fabricate an unmodelled endpoint
+                continue
+            relation = string(relationship.get("type"), 80)
+            if not relation or not re.fullmatch(r"[^\x00-\x1f<>]{1,80}", relation):
+                raise ValueError("Invalid system manifest relationship type")
+            evidence = relationship.get("evidence_status")
+            edge(src, dst, relation, MANIFEST, index, relationship.get("note"),
+                 evidence if evidence in EVIDENCE else "declared")
+        if skipped_roles:
+            print(json.dumps({"notice": "%d component roles are not modelled and were skipped" % skipped_roles}),
+                  file=sys.stderr)
+        if skipped_relationships:
+            print(json.dumps({"notice": "%d manifest relationships had an unmodelled endpoint" % skipped_relationships}),
+                  file=sys.stderr)
 
     signature = hashlib.sha256()
     for file in sorted(files.values(), key=lambda f: f["path"]):

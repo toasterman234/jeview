@@ -115,6 +115,46 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(graph["nodes"][0]["type"], "note")
         self.assertEqual(graph["nodes"][0]["properties"]["intent_labels"], ["Scope"])
 
+    def test_declared_manifest_supplies_processes_and_dependencies(self):
+        target = self.root / "system-manifest.yaml"
+        target.write_text("""manifest_version: '0.5'
+id: test-loop
+components:
+- {id: process.build_pipeline, role: build_pipeline, path: rebuild.sh, represents: "ordered build"}
+- {id: process.page_builders, role: generator, path: site/build_dashboard.py, represents: "page builders"}
+- {id: output.pages, role: generated_view, path: site/, represents: "published pages"}
+- {id: mystery.thing, role: unmodelled_role, path: x, represents: "not mapped"}
+relationships:
+- {from: process.build_pipeline, to: process.page_builders, type: triggers, evidence_status: observed}
+- {from: process.page_builders, to: output.pages, type: produces, evidence_status: observed}
+- {from: process.page_builders, to: mystery.thing, type: touches, evidence_status: observed}
+""", encoding="utf8")
+        graph = module.export(self.root)
+        processes = [n for n in graph["nodes"] if n["type"] == "process"]
+        self.assertEqual([n["label"] for n in processes], ["process.build_pipeline", "process.page_builders"])
+        self.assertTrue(all(n["evidence"] == "declared" and n["status"] == "historical" for n in processes))
+        self.assertTrue(all(n["source"]["path"] == "system-manifest.yaml" for n in processes))
+        self.assertEqual(processes[0]["properties"]["role"], "build_pipeline")
+        self.assertEqual(graph["counts"]["components"], 3)
+        # The unmodelled endpoint is skipped rather than fabricated into a kind.
+        self.assertEqual(graph["counts"]["system_links"], 2)
+        self.assertNotIn("mystery.thing", json.dumps(graph))
+        self.assertIn("system-manifest.yaml", [x["path"] for x in graph["source"]["files"]])
+        # No component file paths or the unmodelled role leak into the export.
+        self.assertNotIn("rebuild.sh", json.dumps(graph))
+
+    def test_live_loop_predicate_is_exported_as_recorded(self):
+        (self.root / "data" / "dogfood-links.yaml").write_text("""links:
+- source_uuid: TEST0000000000000002
+  target_uuid: TEST0000000000000001
+  kind: link
+  predicate: supersedes_direction
+  rationale: 'A newer record replaces the direction of the older one'
+""", encoding="utf8")
+        graph = module.export(self.root)
+        self.assertEqual(graph["counts"]["links"], 1)
+        self.assertEqual(graph["edges"][-1]["type"], "supersedes_direction")
+
     def test_cli_writes_0600_snapshot_outside_source(self):
         output = Path(self.tmp.name) / "private" / "snapshot.json"
         result = subprocess.run(
