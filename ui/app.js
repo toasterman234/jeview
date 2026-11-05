@@ -767,7 +767,7 @@
       const node = isLoopMode()
         ? loopGraph.hit(x - world.jev.x, y - world.jev.y)
         : sampleGraph.hit(data.mapMode, x - world.jev.x, y - world.jev.y);
-      return node ? { node, kind: isLoopMode() ? "loop" : "sample" } : null;
+      return node ? { node, kind: isLoopMode() ? (node.type === "group" ? "loop-group" : "loop") : "sample" } : null;
     }
     if (Math.hypot(world.jev.x - x, world.jev.y - y) < 18) return { node: world.jev, kind: "jev" };
     for (const kind of present()) {
@@ -875,6 +875,7 @@
     canvas.style.cursor = hover?.kind === "question" ? "grab" : hover ? "pointer" : "default";
     if (!hover || hover.kind === "question") return hideTip(); // a hovered question shows itself whole on the map
     if (hover.kind === "sample") return showTip(event.clientX, event.clientY, h("b", {}, hover.node.label), h("div", { class: "sub" }, `Sample ${hover.node.type.replaceAll("_", " ")} · click to inspect`));
+    if (hover.kind === "loop-group") return showTip(event.clientX, event.clientY, h("b", {}, hover.node.label), h("div", { class: "sub" }, "Click to filter this object type"));
     if (hover.kind === "loop") return showTip(event.clientX, event.clientY, h("b", {}, hover.node.label), h("div", { class: "sub" },
       "Type " + hover.node.type + " · " + (hover.node.status === "historical" ? "historical system topology" : "source snapshot") +
       " · " + loopGraph.labelsOf(hover.node).slice(0, 4).join(", ")));
@@ -887,6 +888,11 @@
     if (drag?.moved) return; // the end of a pan, not a click
     const hit = nodeAt(...toWorld(event.clientX, event.clientY));
     if (!hit) { if (drawer.classList.contains("open")) closeDrawer(); else focus(null); return; }
+    if (hit.kind === "loop-group") {
+      loopGraph.toggleType(hit.node.groupType);
+      view.user = false; showToggles(); renderCorner(true);
+      return;
+    }
     if (hit.kind === "loop") {
       const node = hit.node, source = loopGraph.sourceInfo();
       const links = loopGraph.nodeRelations(node.id);
