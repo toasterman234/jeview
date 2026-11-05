@@ -133,7 +133,26 @@
       body.append(h("div", { class: "loop-actions" },
         h("button", { class: "ghost small", onclick: () => {
           draft = structuredClone(Sim.DEFAULT); reset(); hooks.switchTo("simulate");
-        } }, "Define a simulation")));
+        } }, "Blank simulation")));
+      if (processes.length) {
+        const chooser = h("select", { "aria-label": "Choose a recorded process to model" },
+          options(processes.map((p) => [p.id, ellipse(p.label, 35)]), processes[0].id, h));
+        body.append(h("div", { class: "loop-actions" }, chooser,
+          h("button", { class: "ghost small", onclick: () => {
+            const p = graph.byId(chooser.value);
+            if (!p) return;
+            // Model the chosen process as an entirely new WHAT-IF draft.
+            // No behavior/guard is inferred as authoritative from its prose.
+            draft = {
+              id: ("preview-" + p.id.replace(/[^a-zA-Z0-9_-]/g, "-")).slice(0, 70),
+              name: ellipse(p.label, 80), trigger: ("source." + p.id.replace(/[^a-zA-Z0-9_-]/g, "-")).slice(0, 95),
+              targetType: graph.cases().length ? "case" : "note",
+              steps: [freshStep()],
+            };
+            reset(); setNotice("Modeling a historical process as a NEW sandbox draft. Its real behavior was not imported.");
+            hooks.switchTo("simulate");
+          } }, "Model in sandbox")));
+      }
       body.append(nodeList(h, processes, navigate, 100));
       if (!processes.length) body.append(h("p", { class: "quiet" }, "The optional system-graph/graph.json topology is missing from this export."));
     } else if (view === "observe") {
@@ -163,7 +182,10 @@
         field("Process name", "process_name", draft.name),
         field("Process ID", "process_id", draft.id),
         field("Trigger event", "process_trigger", draft.trigger),
-        select("Target object type", "target_type", typeChoice, draft.targetType),
+        h("label", { class: "loop-field" }, h("span", {}, "Target object type"),
+          h("select", { name: "target_type", onchange: (event) => {
+            updateDraftFromForm(event.target.closest("form")); reset(); hooks.changed();
+          } }, options(typeChoice, draft.targetType, h))),
         h("p", { class: "eyebrow" }, "Steps · up to 8"),
         ...draft.steps.map((step, i) => h("div", { class: "loop-step" },
           h("p", { class: "stats-meta" }, "Step " + (i + 1)),
