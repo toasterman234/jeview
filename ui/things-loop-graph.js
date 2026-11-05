@@ -123,6 +123,7 @@
   globalThis.JeviewLoopGraph = Object.freeze({
     setResult, focus, center, sourceInfo, bounds, hit, draw, nodeRelations,
     visible: () => state.visible,
+    cases: () => allNodes().filter((n) => n.type === "case"),
     byId,
   });
 })();
