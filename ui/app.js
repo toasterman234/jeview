@@ -68,6 +68,8 @@
   const data = { records: [], byId: new Map(), cursor: 0, older: 0, meta: null, run: null, full: new Map(), selected: null, focus: null, tab: "recent", clock: 0, traces: remembered("traces", true), colours: remembered("colours", true), dedupe: remembered("dedupe", true) };
   const sampleGraph = globalThis.JeviewSampleGraph;
   const loopGraph = globalThis.JeviewLoopGraph;
+  const loopWorkspace = globalThis.JeviewLoopWorkspace;
+  const isLoopMode = (mode = data.mapMode) => ["loop", "processes", "simulate", "observe"].includes(mode);
   data.mapMode = "decisions"; // The existing live decision map remains the default.
   const visible = (record) => data.run === null || record.label === data.run;
   const eventOf = (record, q) => `${record.id}:${q.id}`;
@@ -511,9 +513,10 @@
   /** Until someone zooms or pans, the view eases to fit the whole map into the free area. */
   function fit() {
     const B = data.mapMode === "decisions" ? world.bounds :
-      data.mapMode === "loop" ? loopGraph.bounds(world.jev) : sampleGraph.bounds(data.mapMode, world.jev), A = world.area;
+      isLoopMode() ? loopGraph.bounds(world.jev) : sampleGraph.bounds(data.mapMode, world.jev), A = world.area;
     if (view.user || !B || hover) return; // never moves under the pointer
-    const k = clamp(Math.min((A.r - A.l) / (B.r - B.l + 40), (A.b - A.t) / (B.b - B.t + 40)), 0.35, 1);
+    const k = clamp(Math.min((A.r - A.l) / (B.r - B.l + 40), (A.b - A.t) / (B.b - B.t + 40)),
+      isLoopMode() ? 0.055 : 0.35, 1);
     const x = (A.l + A.r) / 2 - ((B.l + B.r) / 2) * k, y = (A.t + A.b) / 2 - ((B.t + B.b) / 2) * k;
     const pace = k < view.k - 0.001 ? 0.06 : 0.025; // room for something new straight away; closing in after things go, gently
     view.k += (k - view.k) * pace; view.x += (x - view.x) * pace; view.y += (y - view.y) * pace;
@@ -592,7 +595,7 @@
       fit();
       ctx.clearRect(0, 0, innerWidth, innerHeight);
       ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.k, view.k);
-      if (data.mapMode === "loop") loopGraph.draw(ctx, world.jev, colors);
+      if (isLoopMode()) loopGraph.draw(ctx, world.jev, colors, view.k);
       else sampleGraph.draw(ctx, world.jev, colors, data.mapMode);
       ctx.restore();
       return;
@@ -761,10 +764,10 @@
   const inside = (body, x, y, pad = 4) => Math.abs(x - body.x) <= body.w / 2 + pad && Math.abs(y - body.y) <= body.h / 2 + pad;
   function nodeAt(x, y) {
     if (data.mapMode !== "decisions") {
-      const node = data.mapMode === "loop"
+      const node = isLoopMode()
         ? loopGraph.hit(x - world.jev.x, y - world.jev.y)
         : sampleGraph.hit(data.mapMode, x - world.jev.x, y - world.jev.y);
-      return node ? { node, kind: data.mapMode === "loop" ? "loop" : "sample" } : null;
+      return node ? { node, kind: isLoopMode() ? "loop" : "sample" } : null;
     }
     if (Math.hypot(world.jev.x - x, world.jev.y - y) < 18) return { node: world.jev, kind: "jev" };
     for (const kind of present()) {
@@ -826,6 +829,7 @@
   $("#autozoom").addEventListener("click", () => { view.user = !view.user; remember("autozoom", !view.user); showToggles(); });
   showToggles();
   // The fixture layers share the canvas and drawer. They never change Jev's live call model.
+  let loopLoaded = false;
   async function loadLoopSnapshot() {
     try {
       const response = await fetch("/_/api/sources/things-loop", { cache: "no-store" });
@@ -834,20 +838,29 @@
     } catch {
       loopGraph.setResult({ status: "unavailable", connected: false, message: "The local source could not be read." });
     }
-    if (data.mapMode === "loop") renderCorner(true);
+    loopLoaded = true;
+    if (isLoopMode()) {
+      loopGraph.setView(data.mapMode === "loop" ? "objects" : data.mapMode);
+      loopWorkspace.reset();
+      renderCorner(true);
+    }
+    return loopGraph.sourceInfo().connected;
   }
   function switchGraph(mode) {
     data.mapMode = mode;
-    if (mode === "loop") void loadLoopSnapshot();
+    if (isLoopMode()) {
+      if (!loopLoaded) void loadLoopSnapshot();
+      else loopGraph.setView(mode === "loop" ? "objects" : mode);
+    }
     hover = null; hideTip();
     view.user = false; showToggles();
-    for (const name of ["decisions", "context", "harness", "loop"]) {
+    for (const name of ["decisions", "context", "harness", "loop", "processes", "simulate", "observe"]) {
       const button = $(`#view-${name}`);
       button.setAttribute("aria-pressed", String(mode === name));
     }
     closeDrawer(); about(); renderCorner(true);
   }
-  for (const name of ["decisions", "context", "harness", "loop"]) {
+  for (const name of ["decisions", "context", "harness", "loop", "processes", "simulate", "observe"]) {
     $(`#view-${name}`).addEventListener("click", () => switchGraph(name));
   }
   canvas.addEventListener("pointermove", (event) => {
@@ -862,7 +875,9 @@
     canvas.style.cursor = hover?.kind === "question" ? "grab" : hover ? "pointer" : "default";
     if (!hover || hover.kind === "question") return hideTip(); // a hovered question shows itself whole on the map
     if (hover.kind === "sample") return showTip(event.clientX, event.clientY, h("b", {}, hover.node.label), h("div", { class: "sub" }, `Sample ${hover.node.type.replaceAll("_", " ")} · click to inspect`));
-    if (hover.kind === "loop") return showTip(event.clientX, event.clientY, h("b", {}, hover.node.label), h("div", { class: "sub" }, `Things Loop ${hover.node.type} · local snapshot · click to inspect`));
+    if (hover.kind === "loop") return showTip(event.clientX, event.clientY, h("b", {}, hover.node.label), h("div", { class: "sub" },
+      "Type " + hover.node.type + " · " + (hover.node.status === "historical" ? "historical system topology" : "source snapshot") +
+      " · " + loopGraph.labelsOf(hover.node).slice(0, 4).join(", ")));
     if (hover.kind === "invalid") showTip(event.clientX, event.clientY, h("b", {}, "Invalid"), ` · ${plural(hover.node.count, "call")} Jev rejected`, h("div", { class: "sub" }, "Click to see them"));
     else if (hover.kind === "jev") showTip(event.clientX, event.clientY, h("b", {}, "Jev"), h("div", { class: "sub" }, `${plural(data.records.filter(visible).length, "call")} so far`));
     else { const o = hover.node, called = nameOf(o.kind.run, o.kind.name, o.name); showTip(event.clientX, event.clientY, h("b", {}, called), ` · chosen ${plural(o.count, "time")}`, h("div", { class: "sub" }, `${called === human(o.name) ? "" : `Its key is ${o.name}. `}${typeof o.latest === "number" ? `Jev's latest probability ${pct(o.latest)}. ` : ""}${o.count ? "Click for the calls behind it" : ""}`)); }
@@ -876,14 +891,18 @@
       const node = hit.node, source = loopGraph.sourceInfo();
       const links = loopGraph.nodeRelations(node.id);
       openDrawer(
-        h("p", { class: "eyebrow" }, "Things Loop · read-only snapshot"),
+        h("p", { class: "eyebrow" }, "Things Loop · " + (node.status === "historical" ? "historical topology" : "source snapshot")),
         h("h2", { class: "d-title" }, node.label),
         h("p", { class: "d-meta" }, node.type + " · " + node.id),
         h("p", { class: "d-meta" }, "Exported " + (source.exportedAt ?? "unknown") + " · revision " + (source.revision?.slice(0, 12) ?? "unknown")),
         h("p", { class: "d-meta" }, "Authority unverified · source " + node.source.path),
+        h("p", { class: "d-meta" }, "Evidence " + node.evidence + " · " + node.status),
         h("div", { class: "state" }, doc(node.properties)),
+        loopGraph.axesOf(node).length ? h("p", { class: "quiet" }, "Typed labels: " + loopGraph.axesOf(node).map((x) => x.axis.replaceAll("_", " ") + ": " + x.value).join(" · ")) : null,
+        loopGraph.overlayFor(node.id) ? h("p", { class: "loop-notice" }, "SIMULATED ONLY · " +
+          JSON.stringify(loopGraph.overlayFor(node.id)) + " · original source unchanged") : null,
         node.type !== "phase" ? h("button", { class: "ghost small", onclick: () => {
-          loopGraph.focus(node.id); closeDrawer(); view.user = false; showToggles();
+          loopGraph.focus(node.id); closeDrawer(); view.user = false; showToggles(); renderCorner(true);
         } }, "Focus on this " + node.type) : null,
         h("p", { class: "eyebrow", style: "margin-top:20px" }, "Recorded relationships · " + links.length),
         ...links.slice(0, 35).map((edge) => {
@@ -1013,7 +1032,7 @@
   const totals = (shown) => `${plural(shown.length, "call")} · median ${seconds(median(shown.map((r) => r.elapsedMs)))} · ${money(shown.reduce((sum, r) => sum + (r.cost || 0), 0))}`;
   let cornerKey = "";
   function renderCorner(force = false) {
-    if (data.mapMode === "loop") {
+    if (isLoopMode()) {
       const source = loopGraph.sourceInfo(), cases = loopGraph.cases();
       const chosen = loopGraph.center()?.id, key = "loop|" + (source.revision || source.status) + "|" + chosen;
       if (!force && cornerKey === key) return;
