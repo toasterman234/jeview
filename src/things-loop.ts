@@ -3,14 +3,14 @@
 import { readFileSync, statSync } from "node:fs";
 
 export type ThingsLoopNode = {
-  id: string; type: "note" | "case" | "phase"; label: string;
+  id: string; type: "note" | "case" | "phase" | "actor" | "system" | "store" | "model" | "check" | "code" | "process" | "output" | "gap"; label: string;
   properties: Record<string, unknown>;
   source: { path: string; id: string };
-  evidence: "record"; status: "snapshot";
+  evidence: "record" | "observed" | "declared" | "inferred" | "missing" | "conflicting"; status: "snapshot" | "historical";
 };
 export type ThingsLoopEdge = {
   from: string; to: string; type: string; rationale: string;
-  source: { path: string; index: number }; evidence: "record";
+  source: { path: string; index: number }; evidence: "record" | "observed" | "declared" | "inferred" | "missing" | "conflicting";
 };
 export type ThingsLoopGraph = {
   format: "jeview.things-loop/v1"; exportedAt: string;
@@ -26,9 +26,14 @@ export type ThingsLoopRead =
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const isString = (value: unknown, limit: number) => typeof value === "string" && value.length <= limit;
-const pathOk = (value: unknown) => isString(value, 180) && /^(data|linkml)\/[A-Za-z0-9_./-]+\.yaml$/.test(value as string) && !(value as string).split("/").includes("..");
+const pathOk = (value: unknown) => isString(value, 180) &&
+  (/^(data|linkml)\/[A-Za-z0-9_./-]+\.yaml$/.test(value as string) || value === "system-graph/graph.json") &&
+  !(value as string).split("/").includes("..");
 const digest = (value: unknown) => isString(value, 64) && /^[a-f0-9]{64}$/.test(value as string);
-const nodeId = (value: unknown) => isString(value, 140) && /^(note|case|phase):[A-Za-z0-9:]+$/.test(value as string);
+const nodeId = (value: unknown) => isString(value, 140) && /^(note|case|phase|sys):[A-Za-z0-9:_-]+$/.test(value as string);
+const kinds = new Set(["actor", "system", "store", "model", "check", "code", "process", "output", "gap"]);
+const evidences = new Set(["record", "observed", "declared", "inferred", "missing", "conflicting"]);
+const sysRelation = (value: unknown) => isString(value, 80) && /^[A-Za-z0-9 _./-]{1,80}$/.test(value as string);
 const allowedPredicates = new Set(["links_to", "branches_from", "prompted_by", "gates", "indicts", "derived_from", "based_on", "has_phase"]);
 const maxBytes = 8 * 1024 * 1024;
 
@@ -48,12 +53,16 @@ export function parseThingsLoopSnapshot(value: unknown): ThingsLoopGraph {
   const ids = new Set<string>();
   for (const item of value.nodes) {
     if (!isObject(item) || !nodeId(item.id) ||
-        !["note", "case", "phase"].includes(item.type as string) ||
-        !String(item.id).startsWith(String(item.type) + ":") ||
+        !(["note", "case", "phase"].includes(item.type as string) || kinds.has(item.type as string)) ||
+        !(String(item.id).startsWith(String(item.type) + ":") ||
+          (String(item.id).startsWith("sys:") && kinds.has(item.type as string))) ||
         !isString(item.label, 160) || !isObject(item.properties) ||
         !isObject(item.source) || !pathOk(item.source.path) ||
         !isString(item.source.id, 100) ||
-        item.evidence !== "record" || item.status !== "snapshot" ||
+        !evidences.has(item.evidence as string) ||
+        (String(item.id).startsWith("sys:") ? 
+          (item.status !== "historical" || item.source.path !== "system-graph/graph.json" || item.evidence === "record") :
+          (item.status !== "snapshot" || item.evidence !== "record" || item.source.path === "system-graph/graph.json")) ||
         ids.has(item.id as string)) {
       throw Error("invalid Things Loop snapshot node");
     }
@@ -61,10 +70,13 @@ export function parseThingsLoopSnapshot(value: unknown): ThingsLoopGraph {
   }
   for (const item of value.edges) {
     if (!isObject(item) || !ids.has(item.from as string) || !ids.has(item.to as string) ||
-        !allowedPredicates.has(item.type as string) || !isString(item.rationale, 350) ||
+        !(String(item.from).startsWith("sys:") && String(item.to).startsWith("sys:")
+          ? sysRelation(item.type) && item.evidence !== "record"
+          : allowedPredicates.has(item.type as string) && item.evidence === "record") || !isString(item.rationale, 350) ||
         !isObject(item.source) || !pathOk(item.source.path) ||
         !Number.isSafeInteger(item.source.index) || (item.source.index as number) < 0 ||
-        item.evidence !== "record") {
+        !evidences.has(item.evidence as string) ||
+        (String(item.from).startsWith("sys:") ? item.source.path !== "system-graph/graph.json" : item.source.path === "system-graph/graph.json")) {
       throw Error("invalid Things Loop snapshot relationship");
     }
   }
@@ -72,9 +84,13 @@ export function parseThingsLoopSnapshot(value: unknown): ThingsLoopGraph {
     notes: value.nodes.filter((n: ThingsLoopNode) => n.type === "note").length,
     cases: value.nodes.filter((n: ThingsLoopNode) => n.type === "case").length,
     phases: value.nodes.filter((n: ThingsLoopNode) => n.type === "phase").length,
-    links: value.edges.filter((e: ThingsLoopEdge) => !["based_on", "has_phase"].includes(e.type)).length,
+    links: value.edges.filter((e: ThingsLoopEdge) => e.from.startsWith("note:") && !["based_on", "has_phase"].includes(e.type)).length,
+    components: value.nodes.filter((n: ThingsLoopNode) => n.id.startsWith("sys:")).length,
+    system_links: value.edges.filter((e: ThingsLoopEdge) => e.from.startsWith("sys:")).length,
   };
-  if (!Object.entries(expected).every(([key, count]) => (value.counts as Record<string, unknown>)[key] === count)) {
+  if (!Object.entries(expected).every(([key, count]) =>
+    (value.counts as Record<string, unknown>)[key] === count ||
+    ((key === "components" || key === "system_links") && (value.counts as Record<string, unknown>)[key] === undefined && count === 0))) {
     throw Error("Things Loop snapshot counts do not match nodes/edges");
   }
   // No additional secret/body fields are passed through from an untrusted snapshot.
@@ -89,6 +105,7 @@ export function parseThingsLoopSnapshot(value: unknown): ThingsLoopGraph {
       id: n.id, type: n.type, label: n.label,
       properties: Object.fromEntries(Object.entries(n.properties).filter(([k]) =>
         ["status", "stage", "destination", "next_step", "next_move_by", "dispatched_ref",
+         "labels", "kind", "perspective", "detail",
          "phase_order", "intent", "intent_labels", "inferred_intent_labels", "topic_labels",
          "state_labels", "kind_labels", "stance_labels"].includes(k))),
       source: { path: n.source.path, id: n.source.id }, evidence: "record", status: "snapshot",
