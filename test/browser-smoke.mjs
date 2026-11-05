@@ -95,6 +95,11 @@ try {
     return result.result?.value;
   };
   await retry(() => evaluate('document.querySelector("#map")?.classList.contains("ready")'), "viewer becomes ready");
+  await retry(() => evaluate('document.querySelector("#view-loop")?.getAttribute("aria-pressed") === "true"'), "source-backed Object Map becomes primary");
+  await retry(() => evaluate('window.JeviewLoopGraph.sourceInfo().connected'), "Object Map source adapter connected");
+  assert.equal(await evaluate('document.querySelector("#view-decisions")?.getAttribute("aria-pressed")'), "false");
+  assert.equal(await evaluate('window.JeviewLoopGraph.all().length'), 5);
+  await evaluate('document.querySelector("#view-decisions").click()');
   assert.equal(await evaluate('document.querySelector("#view-decisions")?.getAttribute("aria-pressed")'), "true");
   assert.equal(await evaluate('document.querySelector("#view-context")?.getAttribute("aria-pressed")'), "false");
   await evaluate(`(() => {
@@ -133,21 +138,45 @@ try {
   await retry(() => evaluate('window.__canvasWords.includes("Agent")'), "Harness nodes drawn on original canvas");
   await clickNode("agent");
   await retry(() => evaluate('document.querySelector("#drawer-body").textContent.includes("Agent") && document.querySelector("#drawer-body").textContent.includes("Synthetic sample")'), "Agent inspector reflects sample provenance");
-  // Switch to the real-source *format*, using only an innocuous synthetic local snapshot.
+  // The object map must show every type, not just a selected Case.
   await evaluate('window.__canvasWords = []; document.querySelector("#view-loop").click()');
-  await retry(() => evaluate('window.JeviewLoopGraph.sourceInfo().connected === true'), "Things Loop local read API");
-  await retry(() => evaluate('document.querySelector("#corner").textContent.includes("Things Loop") && document.querySelector("#corner .qlist button")'), "Cases appear in Jeview sidebar");
-  await evaluate('document.querySelector("#corner .qlist button").click()');
-  assert.equal(await evaluate('window.JeviewLoopGraph.center().type'), "case");
-  await retry(() => evaluate('window.__canvasWords.some(text => text.includes("THINGS LOOP"))'), "Things Loop native-canvas draw");
+  await retry(() => evaluate('window.JeviewLoopGraph.mode() === "catalog" && window.JeviewLoopGraph.visible().length === 5'), "all source-backed objects appear on the canvas");
+  await retry(() => evaluate('document.querySelector("#corner").textContent.includes("All objects") && document.querySelectorAll("#corner .loop-chip").length >= 4'), "typed inventory and facet controls");
+  const count = await evaluate('window.JeviewLoopGraph.facets().map(x => x.type).sort().join(",")');
+  assert.equal(count, "case,note,phase,process,store");
+  await evaluate('document.querySelector("#corner .loop-list button").click()');
+  assert.equal(await evaluate('window.JeviewLoopGraph.center()?.type'), "case");
+  await retry(() => evaluate('window.__canvasWords.some(text => text.includes("CASE"))'), "Case nodes drawn on original canvas");
+  // The existing canvas transforms view position/scale, then the centered focused object.
   const point = await evaluate('(() => { const t = window.__moves.slice(-2), k = window.__zoom; return [t[0][0] + t[1][0] * k, t[0][1] + t[1][1] * k]; })()');
   await evaluate('document.querySelector("#map").dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: ' + point[0] + ', clientY: ' + point[1] + ' }))');
-  await retry(() => evaluate('document.querySelector("#drawer").classList.contains("open") && document.querySelector("#drawer-body").textContent.includes("Example Things case") && document.querySelector("#drawer-body").textContent.includes("has phase")'), "Things Loop case inspector and relationship");
+  await retry(() => evaluate('document.querySelector("#drawer").classList.contains("open") && document.querySelector("#drawer-body").textContent.includes("Example Things case") && document.querySelector("#drawer-body").textContent.includes("has phase")'), "source-record Case inspector with typed relationships");
   assert.equal(await evaluate('window.JeviewLoopGraph.sourceInfo().authority'), "unverified");
+  await evaluate('document.querySelector("#view-processes").click()');
+  await retry(() => evaluate('document.querySelector("#corner").textContent.includes("Route a Case") && window.JeviewLoopGraph.center().type === "process"'), "historical process inspection");
+  await evaluate('document.querySelector("#view-observe").click()');
+  await retry(() => evaluate('document.querySelector("#corner").textContent.includes("NOT LIVE") && document.querySelector("#corner").textContent.includes("reads")'), "historical observation is never claimed live");
+  await evaluate('document.querySelector("#view-simulate").click()');
+  await retry(() => evaluate('document.querySelector("#corner #loop-process-form")'), "process editor appears");
+  await evaluate('document.querySelector("#corner #loop-process-form button[type=button]").click()'); // + Step
+  await retry(() => evaluate('document.querySelectorAll("#corner .loop-step").length === 2'), "editor composes a second effect");
+  // The first step passes (scoped -> working); the second can match the new overlay.
+  await evaluate('document.querySelector("[name=guard_1]").value = "stage_is"; document.querySelector("[name=guard_value_1]").value = "working"; document.querySelector("[name=effect_1]").value = "set_stage"; document.querySelector("[name=effect_value_1]").value = "blocked"');
+  await evaluate('Array.from(document.querySelectorAll("#corner .loop-actions button")).find(x => x.textContent === "Play").click()');
+  await retry(() => evaluate('window.JeviewLoopWorkspace.status().phase === "completed"'), "sandbox process event/guard/effect completes", 10000);
+  assert.equal(await evaluate('window.JeviewLoopGraph.overlayFor("case:TEST0000000000000001")?.stage'), "blocked");
+  await retry(() => evaluate('document.querySelector("#corner").textContent.includes("SIMULATED") || document.querySelector("#corner").textContent.includes("simulated")'), "simulated event trace visible");
+  await evaluate('Array.from(document.querySelectorAll("#corner .loop-actions button")).find(x => x.textContent === "Reset").click()');
+  assert.equal(await evaluate('window.JeviewLoopGraph.overlayFor("case:TEST0000000000000001")'), null);
+  // Mobile layout: the object controls must still be reachable after rescaling.
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await evaluate('document.querySelector("#view-loop").click()');
+  await retry(() => evaluate('document.querySelector("#view-loop").getBoundingClientRect().width > 0'), "mobile viewport renders Objects control");
+  await send("Emulation.clearDeviceMetricsOverride");
   await evaluate('document.querySelector("#view-decisions").click()');
   assert.equal(await evaluate('document.querySelector("#view-decisions").getAttribute("aria-pressed")'), "true");
-  assert.equal(store.count(), 0, "read-only views cannot call Jev");
-  console.log("Browser smoke passed: Decisions/Context/Harness and private snapshot Things Loop native-canvas rendering, inspect and return.");
+  assert.equal(store.count(), 0, "rendering, simulation and replay cannot call Jev");
+  console.log("Browser smoke passed: live Jev preserved, native all-object map/facets/inspector, process view, historical Observe, multi-step simulated effect and mobile controls.");
 } finally {
   ws?.close();
   if (chrome) {
