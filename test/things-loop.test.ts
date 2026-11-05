@@ -12,7 +12,7 @@ const stamp = () => new Date().toISOString();
 const file = { path: "data/dogfood-note.yaml", sha256: "b".repeat(64) };
 const example = () => ({
   format: "jeview.things-loop/v1", exportedAt: stamp(),
-  source: { name: "Things Loop", kind: "local_export", authority: "unverified", revision, files: [file] },
+  source: { name: "Things Loop", kind: "local_export", authority: "unverified", revision, files: [{ ...file }] },
   nodes: [
     { id: "note:TEST0000000000000001", type: "note", label: "A case note",
       properties: { status: "pending", intent_labels: ["Scope"], body: "SHOULD_NOT_LEAK" },
