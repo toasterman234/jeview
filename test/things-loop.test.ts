@@ -61,6 +61,32 @@ test("an explicit private snapshot is validated, bounded and stripped of unsuppo
   assert.throws(() => parseThingsLoopSnapshot(badPath), /structure/);
 });
 
+test("historical system nodes preserve typed provenance and do not become live records", () => {
+  const graph = example();
+  graph.source.files.push({ path: "system-graph/graph.json", sha256: "c".repeat(64) });
+  graph.nodes.push({ id: "sys:p-route", type: "process", label: "Test process",
+    properties: { kind: "process", perspective: "processes", detail: "No actual execution" },
+    source: { path: "system-graph/graph.json", id: "p-route" },
+    evidence: "declared", status: "historical" });
+  graph.nodes.push({ id: "sys:p-store", type: "store", label: "Test store",
+    properties: { kind: "store", perspective: "records", detail: "Historical evidence only" },
+    source: { path: "system-graph/graph.json", id: "p-store" },
+    evidence: "observed", status: "historical" });
+  graph.edges.push({ from: "sys:p-route", to: "sys:p-store",
+    type: "reads", rationale: "Old topology declaration",
+    source: { path: "system-graph/graph.json", index: 0 }, evidence: "observed" });
+  graph.counts.components = 2;
+  graph.counts.system_links = 1;
+  const parsed = parseThingsLoopSnapshot(graph);
+  assert.equal(parsed.nodes.at(-2)?.type, "process");
+  assert.equal(parsed.nodes.at(-2)?.evidence, "declared");
+  assert.equal(parsed.nodes.at(-2)?.status, "historical");
+  assert.equal(parsed.edges.at(-1)?.evidence, "observed");
+  const mutation = example();
+  mutation.nodes[0]!.evidence = "observed";
+  assert.throws(() => parseThingsLoopSnapshot(mutation), /node/);
+});
+
 test("no configured snapshot or a missing one is never reported as a live connection", () => {
   assert.equal(readThingsLoopSnapshot().status, "not_configured");
   const missing = readThingsLoopSnapshot("/nonexistent/jeview-private-loop-export.json");
