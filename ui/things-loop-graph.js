@@ -9,7 +9,7 @@
   const short = (s, max = 27) => label(s).length > max ? label(s).slice(0, max - 1) + "…" : label(s);
   const state = { graph: null, status: "not_configured", message: "No snapshot configured",
     ageSeconds: null, view: "objects", mode: "catalog", query: "", kinds: new Set(),
-    focusId: null, visible: [], shownEdges: [], groups: [], overlay: {}, flash: null };
+    focusId: null, visible: [], shownEdges: [], groups: [], overlay: {}, flash: null, zoom: 1 };
   const rawNodes = () => state.graph?.nodes ?? [];
   const rawEdges = () => state.graph?.edges ?? [];
   const byId = (id) => rawNodes().find((n) => n.id === id);
@@ -157,10 +157,14 @@
   }
   function hit(x, y) {
     for (const n of [...state.visible].reverse()) if (Math.abs(x - n.x) <= n.w / 2 && Math.abs(y - n.y) <= n.h / 2) return n;
-    return null;
+    const radius = Math.max(45, Math.min(600, 28 / state.zoom));
+    const group = state.groups.find((g) => Math.hypot(x - g.x, y - g.y) < radius);
+    return group ? { id: "group:" + group.type, type: "group", groupType: group.type, label: group.type + " · " + group.count,
+      properties: { count: group.count }, evidence: "derived", status: "catalog" } : null;
   }
   const nodeRelations = (id) => rawEdges().filter((e) => e.from === id || e.to === id);
   function draw(ctx, origin, colors, zoom = 1) {
+    state.zoom = zoom;
     ctx.save(); ctx.translate(origin.x, origin.y);
     const ink = colors.ink, muted = colors.muted, paper = colors.paper, outline = colors.strong;
     ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = muted;
@@ -173,11 +177,14 @@
     }
     if (state.mode === "catalog") {
       for (const group of state.groups) {
+        const radius = Math.max(45, Math.min(600, 28 / zoom));
+        const font = Math.max(13, Math.min(190, 11 / zoom));
         ctx.fillStyle = colorOf({ type: group.type }, colors);
-        ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.arc(group.x, group.y, 45, 0, 2 * Math.PI); ctx.fill();
-        ctx.fillStyle = paper; ctx.font = "600 13px " + colors.body;
-        ctx.fillText(group.type.toUpperCase(), group.x, group.y - 7);
-        ctx.font = "600 15px " + colors.body; ctx.fillText(String(group.count), group.x, group.y + 12);
+        ctx.globalAlpha = 0.88; ctx.beginPath(); ctx.arc(group.x, group.y, radius, 0, 2 * Math.PI); ctx.fill();
+        ctx.fillStyle = paper; ctx.font = "600 " + font + "px " + colors.body;
+        ctx.fillText(group.type.toUpperCase(), group.x, group.y - font * .4);
+        ctx.font = "600 " + (font * 1.2) + "px " + colors.body;
+        ctx.fillText(String(group.count), group.x, group.y + font * .8);
         ctx.globalAlpha = 1;
       }
     }
@@ -191,13 +198,18 @@
       ctx.strokeStyle = e.evidence === "missing" ? colors.red : outline;
       ctx.globalAlpha = e.evidence === "record" ? 0.55 : 0.28; ctx.stroke(); ctx.globalAlpha = 1;
     }
-    const visibleNames = state.mode === "focus" || zoom > 0.28;
+    const visibleNames = state.mode === "focus" || zoom > 0.6;
     for (const node of state.visible) {
       const color = colorOf(node, colors), props = { ...node.properties, ...(state.overlay?.[node.id] ?? {}) };
       const lit = state.flash?.id === node.id && Date.now() - state.flash.at < 1300;
       if (lit) {
         ctx.beginPath(); ctx.arc(node.x, node.y, 42 + (Date.now() - state.flash.at) / 65, 0, 2 * Math.PI);
         ctx.strokeStyle = colors.accent; ctx.lineWidth = 3; ctx.globalAlpha = 0.65; ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      if (!visibleNames) {
+        ctx.beginPath(); ctx.arc(node.x, node.y, Math.max(7, Math.min(55, 2.6 / zoom)), 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.globalAlpha = .85; ctx.fill(); ctx.globalAlpha = 1;
+        continue;
       }
       ctx.beginPath(); ctx.roundRect(node.x - node.w / 2, node.y - node.h / 2, node.w, node.h, 11);
       ctx.fillStyle = paper; ctx.strokeStyle = node.status === "historical" ? outline : color;
