@@ -20,28 +20,33 @@
     assert(asWord(raw.id, 72) && asWord(raw.name, 100), "id/name required");
     assert(asWord(raw.trigger, 100), "event trigger required");
     assert(allowedTypes.has(raw.targetType), "unknown target type");
-    assert(predicates.has(raw.guard), "unknown guard");
-    assert(raw.guard === "always" || asWord(raw.guardValue, 70), "guard value required");
-    assert(actions.has(raw.effect), "unknown effect");
-    assert(raw.effect === "highlight" || asWord(raw.effectValue, 100), "effect value required");
-    if (raw.effect === "set_stage") {
-      assert(raw.targetType === "case", "stage changes require Case");
-      assert(Object.hasOwn(transitions, raw.effectValue), "unknown stage");
-    }
-    if (raw.effect === "set_status") {
-      assert(raw.targetType === "note", "status changes require Note");
-      assert(["pending", "completed", "cancelled"].includes(raw.effectValue), "unknown note status");
-    }
-    const definition = {};
-    for (const key of ["id", "name", "trigger", "targetType", "guard", "effect"]) definition[key] = raw[key];
-    definition.guardValue = raw.guard === "always" ? "" : raw.guardValue;
-    definition.effectValue = raw.effect === "highlight" ? "" : raw.effectValue;
-    return Object.freeze(definition);
+    const steps = raw.steps ?? [{ guard: raw.guard, guardValue: raw.guardValue, effect: raw.effect, effectValue: raw.effectValue }];
+    assert(Array.isArray(steps) && steps.length >= 1 && steps.length <= 8, "process requires 1–8 steps");
+    const normalized = steps.map((step, index) => {
+      assert(step && typeof step === "object", "invalid step " + index);
+      assert(predicates.has(step.guard), "unknown guard");
+      assert(step.guard === "always" || asWord(step.guardValue, 70), "guard value required");
+      assert(actions.has(step.effect), "unknown effect");
+      assert(step.effect === "highlight" || asWord(step.effectValue, 100), "effect value required");
+      if (step.effect === "set_stage") {
+        assert(raw.targetType === "case", "stage changes require Case");
+        assert(Object.hasOwn(transitions, step.effectValue), "unknown stage");
+      }
+      if (step.effect === "set_status") {
+        assert(raw.targetType === "note", "status changes require Note");
+        assert(["pending", "completed", "cancelled"].includes(step.effectValue), "unknown note status");
+      }
+      return Object.freeze({ guard: step.guard, guardValue: step.guard === "always" ? "" : step.guardValue,
+        effect: step.effect, effectValue: step.effect === "highlight" ? "" : step.effectValue });
+    });
+    return Object.freeze({ id: raw.id, name: raw.name, trigger: raw.trigger,
+      targetType: raw.targetType, steps: Object.freeze(normalized) });
   }
+  /* old one-step aliases are accepted at the boundary; new authored processes use `steps` */
   const DEFAULT = Object.freeze(validate({
     id: "preview-case-triage", name: "Case stage preview", trigger: "case.review",
-    targetType: "case", guard: "stage_is", guardValue: "scoped",
-    effect: "set_stage", effectValue: "working",
+    targetType: "case", steps: [{ guard: "stage_is", guardValue: "scoped",
+      effect: "set_stage", effectValue: "working" }],
   }));
   function create(graph, definition = DEFAULT) {
     const rule = validate(definition);
@@ -67,21 +72,21 @@
       assert(node?.type === rule.targetType, "target must match the configured object type");
       target = node;
       phase = "ready";
-      queue = ["event", "guard", "effect", "outcome"];
+      queue = ["event", ...rule.steps.flatMap((_, i) => ["guard:" + i, "effect:" + i]), "outcome"];
       return { phase, targetId: node.id };
     }
     function properties() {
       if (!target) return {};
       return { ...target.properties, ...overlay.get(target.id) };
     }
-    function guarded() {
+    function guarded(ruleStep) {
       const props = properties();
-      switch (rule.guard) {
+      switch (ruleStep.guard) {
         case "always": return true;
-        case "stage_is": return target.type === "case" && props.stage === rule.guardValue;
-        case "status_is": return target.type === "note" && props.status === rule.guardValue;
+        case "stage_is": return target.type === "case" && props.stage === ruleStep.guardValue;
+        case "status_is": return target.type === "note" && props.status === ruleStep.guardValue;
         case "has_intent": return [...(Array.isArray(props.intent_labels) ? props.intent_labels : []),
-          ...(Array.isArray(props.inferred_intent_labels) ? props.inferred_intent_labels : [])].includes(rule.guardValue);
+          ...(Array.isArray(props.inferred_intent_labels) ? props.inferred_intent_labels : [])].includes(ruleStep.guardValue);
       }
       return false;
     }
@@ -89,33 +94,37 @@
       if (!queue.length) return null;
       const next = queue.shift();
       if (next === "event") { phase = "running"; return record("event", "received", rule.trigger, target.id); }
-      if (next === "guard") {
-        if (!guarded()) {
+      if (next.startsWith("guard:")) {
+        const number = Number(next.split(":")[1]), stepDef = rule.steps[number];
+        if (!guarded(stepDef)) {
           queue = []; phase = "denied";
-          return record("guard", "denied", rule.guard + (rule.guardValue ? " " + rule.guardValue : "") + " not satisfied", target.id);
+          return record("guard " + (number + 1), "denied", stepDef.guard +
+            (stepDef.guardValue ? " " + stepDef.guardValue : "") + " not satisfied", target.id);
         }
-        return record("guard", "passed", rule.guard + (rule.guardValue ? " " + rule.guardValue : ""), target.id);
+        return record("guard " + (number + 1), "passed", stepDef.guard +
+          (stepDef.guardValue ? " " + stepDef.guardValue : ""), target.id);
       }
-      if (next === "effect") {
-        let effect = rule.effect, detail = "";
+      if (next.startsWith("effect:")) {
+        const number = Number(next.split(":")[1]), stepDef = rule.steps[number];
+        let effect = stepDef.effect, detail = "";
         const props = properties();
         if (effect === "set_stage") {
-          if (!transitions[props.stage]?.has(rule.effectValue)) {
+          if (!transitions[props.stage]?.has(stepDef.effectValue)) {
             queue = []; phase = "denied";
-            return record("effect", "denied", "No declared transition from " + String(props.stage) +
-              " to " + rule.effectValue + ". The source was not changed.", target.id);
+            return record("effect " + (number + 1), "denied", "No declared transition from " + String(props.stage) +
+              " to " + stepDef.effectValue + ". The source was not changed.", target.id);
           }
-          overlay.set(target.id, { ...(overlay.get(target.id) ?? {}), stage: rule.effectValue });
-          detail = "Hypothetical Case stage " + String(props.stage) + " → " + rule.effectValue;
+          overlay.set(target.id, { ...(overlay.get(target.id) ?? {}), stage: stepDef.effectValue });
+          detail = "Hypothetical Case stage " + String(props.stage) + " → " + stepDef.effectValue;
         } else if (effect === "set_status") {
-          overlay.set(target.id, { ...(overlay.get(target.id) ?? {}), status: rule.effectValue });
-          detail = "Hypothetical Note status " + String(props.status) + " → " + rule.effectValue;
+          overlay.set(target.id, { ...(overlay.get(target.id) ?? {}), status: stepDef.effectValue });
+          detail = "Hypothetical Note status " + String(props.status) + " → " + stepDef.effectValue;
         } else if (effect === "emit") {
-          detail = "Would emit event " + rule.effectValue + " (not delivered)";
+          detail = "Would emit event " + stepDef.effectValue + " (not delivered)";
         } else {
           detail = "Highlight " + target.label + " (no underlying change)";
         }
-        return record("effect", "simulated", detail, target.id);
+        return record("effect " + (number + 1), "simulated", detail, target.id);
       }
       phase = "completed";
       return record("outcome", "simulated", "Sandbox replay complete. No real effect was executed.", target.id);
